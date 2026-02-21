@@ -6,9 +6,11 @@ import { requireAuth, requireRole } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
 
 const createTicketSchema = z.object({
-    title: z.string().min(5),
-    description: z.string().min(10),
-    priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
+    title: z.string().min(5).max(100),
+    description: z.string().min(10).max(2000),
+    priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional().default('MEDIUM'),
+    status: z.any().optional(),
+    assignedToId: z.any().optional(),
     imageUrls: z.array(z.string().url().or(z.string().startsWith('/uploads/'))).max(5).default([]),
 });
 
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest) {
             {
                 title: data.title,
                 description: data.description,
-                priority: data.priority,
+                priority: 'MEDIUM', // TENANT cannot override priority directly
                 tenantId: payload.userId
             },
             data.imageUrls
@@ -46,24 +48,7 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const status = searchParams.get('status') as any;
 
-        let where: any = {};
-        if (status) where.status = status;
-
-        if (payload.role === 'TENANT') {
-            where.tenantId = payload.userId;
-        } else if (payload.role === 'TECHNICIAN') {
-            where.assignedToId = payload.userId;
-        }
-
-        const tickets = await prisma.ticket.findMany({
-            where,
-            include: {
-                tenant: { select: { id: true, name: true, email: true } },
-                assignedTo: { select: { id: true, name: true, email: true } },
-                images: true,
-            },
-            orderBy: { createdAt: 'desc' }
-        });
+        const tickets = await TicketService.getAllForUser(payload, status);
 
         return successResponse(tickets);
     } catch (error: any) {

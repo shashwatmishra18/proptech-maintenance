@@ -16,7 +16,7 @@ export async function requireAuth(req: NextRequest) {
     const payload = await verifyToken(session);
     if (!payload) return errorResponse('Invalid token', 401);
 
-    return payload as SessionPayload;
+    return payload as unknown as SessionPayload;
 }
 
 export async function requireRole(req: NextRequest, roles: Role[]) {
@@ -28,4 +28,11 @@ export async function requireRole(req: NextRequest, roles: Role[]) {
     }
 
     return payload;
+}
+
+export function authorizeTicketAccess(ticket: { tenantId: string; assignedToId: string | null }, user: SessionPayload): boolean {
+    if (user.role === 'MANAGER') return true;
+    if (user.role === 'TENANT' && ticket.tenantId === user.userId) return true;
+    if (user.role === 'TECHNICIAN' && ticket.assignedToId === user.userId) return true;
+    return false;
 }

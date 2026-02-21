@@ -2,8 +2,46 @@ import { prisma } from '../prisma';
 import { AppError } from '../errors/api-response';
 import { NotificationService } from './NotificationService';
 import { Priority, Status, Ticket } from '@prisma/client';
+import { escapeHtml } from '../utils';
 
 export const TicketService = {
+    getAllForUser: async (user: { userId: string, role: string }, status?: Status) => {
+        let where: any = {};
+        if (status) where.status = status;
+
+        if (user.role === 'TENANT') {
+            where.tenantId = user.userId;
+        } else if (user.role === 'TECHNICIAN') {
+            where.assignedToId = user.userId;
+        } else if (user.role !== 'MANAGER') {
+            // Fail-safe block: unknown role blocked from fetching everything
+            return [];
+        }
+
+        const isTech = user.role === 'TECHNICIAN';
+
+        return prisma.ticket.findMany({
+            where,
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                status: true,
+                priority: true,
+                createdAt: true,
+                updatedAt: true,
+                images: { select: { id: true, imageUrl: true } },
+                tenant: {
+                    select: isTech
+                        ? { id: true, name: true }
+                        : { id: true, name: true, email: true }
+                },
+                assignedTo: { select: { id: true, name: true, email: true } },
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+    },
+
     create: async (data: { title: string; description: string; priority: Priority; tenantId: string }, imageUrls: string[]) => {
         if (!data.title || !data.description) {
             throw new AppError('Title and description are required', 400);
@@ -11,8 +49,8 @@ export const TicketService = {
 
         const ticket = await prisma.ticket.create({
             data: {
-                title: data.title,
-                description: data.description,
+                title: escapeHtml(data.title),
+                description: escapeHtml(data.description),
                 priority: data.priority,
                 tenantId: data.tenantId,
                 images: {
@@ -125,7 +163,7 @@ export const TicketService = {
             data: {
                 ticketId,
                 userId,
-                action: `Note added: ${note}`,
+                action: `Note added: ${escapeHtml(note)}`,
             }
         });
     }

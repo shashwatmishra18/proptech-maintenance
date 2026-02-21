@@ -10,7 +10,7 @@ const updateStatusSchema = z.object({
 });
 
 const assignSchema = z.object({
-    technicianId: z.string(),
+    technicianId: z.string().uuid(),
 });
 
 // Manager: Assign Technician
