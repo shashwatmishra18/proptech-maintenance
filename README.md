@@ -175,7 +175,7 @@ Run focused regression coverage with `node --test scripts/security.test.cjs scri
 
 The public homepage offers sign-in and tenant registration. Signed-in visitors to `/` are redirected to their role dashboard. Tenant metrics display the API's total submitted and pending counts; manager and technician dashboards retain their existing supported metrics. Dashboard requests have independent loading, retryable error, and intentional empty states.
 
-All three authorized ticket views expose notes until completion. Assignment, status, and note controls share the existing duplicate-submission guard. Ticket detail errors distinguish missing tickets, forbidden access, expired sessions, and service/network failures; stale controls are hidden after a failed refresh. Notes clear only after a successful save.
+All three authorized ticket views expose notes until completion or cancellation. Assignment, status, and note controls share the existing duplicate-submission guard. Ticket detail errors distinguish missing tickets, forbidden access, expired sessions, and service/network failures; stale controls are hidden after a failed refresh. Notes clear only after a successful save.
 
 Notification dropdowns retain targeted reads and confirmed server counts, with loading, refresh/read errors, retry controls, and visible read labels. Notification records have no structured ticket ID, so items deliberately remain unlinked. Shared ticket cards, wrapping text, responsive detail columns, labelled form controls, a skip link, and native keyboard-accessible controls support desktop and mobile use.
 
@@ -188,7 +188,29 @@ Run the UI regression suite with `node --test scripts/ui.test.cjs`, or run all s
 - `ASSIGNED -> IN_PROGRESS` (Technician marks started)
 - `IN_PROGRESS -> DONE` (Technician marks complete)
 
-These rules are strictly enforced in `lib/services/TicketService.ts`. Reverting to previous states or skipping states returns a `400 Bad Request`.
+These rules are enforced server-side. Managers may additionally reassign active work, cancel active tickets, and reopen completed tickets under the rules below.
+
+## Ticket operations (Phase 7)
+
+All dashboards search on title, description, property name, and unit identifier using server-side, case-insensitive literal matching. Search is trimmed and limited to 120 characters; empty search behaves normally. Counts and results always share the tenant-own, manager-owned-property, or technician-assigned scope. Legacy unmapped tickets keep reporter/assigned-technician access and remain excluded from manager lists.
+
+`GET /api/tickets` accepts `q`, `status`, `priority`, `sort`, `page`, and `pageSize`. Managers additionally filter by UUID `propertyId`, `unitId`, and `technicianId`; technicians may filter by `propertyId`. Invalid, unknown, repeated, or role-inappropriate parameters return 400. Unknown or inaccessible valid IDs produce scoped empty results. Sort is an allowlist: `newest` (default), `oldest`, `priority` (URGENT first), or `updated`, with stable ID tie-breaking. Pages default to 1, page size to 12 (maximum 50; page maximum 10000). The response data is `{ tickets, total, page, pageSize, totalPages }`; out-of-range pages clamp to the last page. Count and page are read in one repeatable-read transaction. This replaces the earlier array response; all repository consumers are updated.
+
+Dashboard filters, sort and page persist in the URL, including refresh/back navigation. Apply resets the page; Clear resets the query. Filter choices from `GET /api/tickets/options` expose only managed properties/units or the technician's assigned-ticket properties. The existing manager-only global technician name/ID directory remains available; no technician-property membership is inferred.
+
+`POST /api/tickets/:id/operations` requires `expectedVersion` plus one of:
+
+- `{ action: "reassign", technicianId, expectedVersion }`: owning manager only, ASSIGNED or IN_PROGRESS, different valid technician. Work returns to ASSIGNED so the destination explicitly starts it. The previous technician immediately loses ticket/note/attachment access.
+- `{ action: "cancel", expectedVersion }`: reporting tenant while OPEN, or owning manager while OPEN/ASSIGNED/IN_PROGRESS. CANCELLED is terminal; ticket, assignment, images, notes and history are retained. Assigned technicians retain historical read access but cannot continue work or add notes.
+- `{ action: "reopen", expectedVersion }`: owning manager only, DONE → OPEN, assignment cleared. Tenants and technicians cannot reopen; cancellation cannot be reopened.
+
+Initial OPEN → ASSIGNED remains separate from reassignment. Normal work stays ASSIGNED → IN_PROGRESS → DONE, assigned technician only. UI confirms reassignment, cancellation and reopening. Activity names both technicians and records cancellation/reopening explicitly. New lifecycle notifications reach affected tenant, owning manager, previous technician and destination technician where relevant, excluding the initiating user. State, version, activity and notifications commit together or roll back together.
+
+Every successful assignment, work transition, lifecycle operation or note increments the ticket version. New operations require a version; existing assignment/status/note endpoints accept optional `expectedVersion` for backward compatibility, and the UI always sends it. All writes use conditional version/state predicates, so incompatible concurrent requests have one winner and a 409 loser. Authorization is checked before version disclosure: a technician whose access was already revoked gets 403 instead. Notes recheck current access inside their write transaction. Stale UI writes refresh details and retain unsaved notes. Existing metrics keep their definitions; cancelled requests are not pending work.
+
+Migration `20261002160000_ticket_operations` only appends CANCELLED to the enum and adds `Ticket.version` default 0. Existing statuses, rows, attachments, history and notifications are preserved. Apply `npx prisma migrate deploy` before the app rollout; regenerate Prisma for host development. No new environment variables, seed or database reset are needed.
+
+Run `node --test scripts/ticket-operations.test.cjs` (included in `npm test`). The guarded local `scripts/integration.cjs` also runs `scripts/ticket-operations.integration.cjs`: real PostgreSQL scoped queries, isolation, protected attachments, lifecycle authorization, notification rollback, and barrier-controlled reassignment/start/cancel/completion/reopen races. It retains unique fixtures and snapshots all existing tables before migration. UI tests cover role controls, native confirmation, stale refresh, and restored filter choices.
 
 ## Release verification and operations
 
@@ -206,7 +228,7 @@ Do not bake legacy uploads into an image: they are excluded from the build conte
 
 Registration accepts passwords up to 72 UTF-8 bytes to prevent bcrypt truncation. Existing password hashes and user records are not rewritten. Sessions are stateless JWTs with seven-day expiry; logout removes the browser cookie, while secret rotation invalidates all tokens. There is no individual token revocation or account-management workflow.
 
-Known operational limits: unlinked uploads after a process crash or lost response may require a controlled manual review; linked or legacy files must not be deleted. Search, pagination, staff invitations, password reset, organizations, notification history, and scheduling remain outside this release.
+Known operational limits: unlinked uploads after a process crash or lost response may require a controlled manual review; linked or legacy files must not be deleted. Staff invitations, password reset, organizations, notification history, and scheduling remain outside this release.
 
 ## ER Diagram
 

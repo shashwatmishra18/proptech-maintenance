@@ -34,7 +34,7 @@ async function login(email) { const {res}=await api('/api/auth/login','','POST',
 function form() { const f=new FormData(); f.append('file',new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=','base64')],{type:'image/png'}),'test.png');return f; }
 async function main() {
   // Snapshot every existing record before the additive migration; compare all old fields after it.
-  const tables=['User','Ticket','TicketImage','ActivityLog','Notification'];
+  const tables=['User','Ticket','TicketImage','ActivityLog','Notification','Property','Unit'];
   const snapshots={};
   for(const table of tables) snapshots[table]=await db.$queryRawUnsafe('SELECT row_to_json(t) AS record FROM "'+table+'" t');
   for(const args of [['migrate','deploy'],['migrate','status']]) {
@@ -45,7 +45,7 @@ async function main() {
     const records=new Map(after.map(row=>[row.record.id,row.record]));
     for(const row of snapshots[table]) for(const [key,value] of Object.entries(row.record)) assert.deepEqual(records.get(row.record.id)?.[key],value,table+' existing field '+key);
   }
-  console.log('PASS: additive migration preserves every existing user, ticket, image, activity and notification field');
+  console.log('PASS: additive migration preserves every existing user, ticket, image, activity, notification, property and unit field');
   const connection=await db.$queryRaw`SELECT current_database() AS database, inet_server_addr()::text AS address, version() AS version`;
   assert.equal(connection[0].database,'proptech_db'); console.log('PASS: live PostgreSQL connection and migration status');
   server=cp.spawn(process.execPath,['node_modules/next/dist/bin/next','start','-p','3103','-H','127.0.0.1'],{env:{...process.env,NODE_ENV:'production'},stdio:['ignore','pipe','pipe']});
@@ -122,7 +122,7 @@ async function main() {
   await api('/api/tickets/'+ticket.id,manager2Cookie,'GET',undefined,404);
   await api('/api/tickets/'+ticket.id+'/notes',manager2Cookie,'POST',{note:'Cross-property note'},404);
   await api('/api/tickets/'+ticket.id+'/status',manager2Cookie,'POST',{technicianId:tech.id},404);
-  assert.equal((await api('/api/tickets',manager2Cookie)).body.length,0);
+  assert.equal((await api('/api/tickets',manager2Cookie)).body.total,0);
   assert.equal((await api('/api/metrics',manager2Cookie)).body.total,0);
   assert.equal(await db.notification.count({where:{userId:manager2.id}}),0);
   for(const priority of ['LOW','MEDIUM','URGENT']) {const t=(await api('/api/tickets',tenantCookie,'POST',{title:'Priority check '+priority,description:'Priority persistence integration',priority},201)).body;assert.equal((await db.ticket.findUnique({where:{id:t.id}})).priority,priority);}
@@ -159,9 +159,9 @@ async function main() {
   const ids=notifications.notifications.map(n=>n.id);const result=(await api('/api/notifications',tenantCookie,'PATCH',{ids})).body;assert.equal(result.unreadCount,notifications.unreadCount-10);assert.equal(await db.notification.count({where:{userId:tenant.id,read:false}}),result.unreadCount);
   const foreign=await db.notification.findFirst({where:{userId:manager.id,read:false}});assert.ok(foreign);await api('/api/notifications',tenantCookie,'PATCH',{ids:[foreign.id]});assert.equal((await db.notification.findUnique({where:{id:foreign.id}})).read,false);
   assert.equal(await db.notification.count({where:{userId:tech.id}}),1);
-  const tenantList=(await api('/api/tickets',tenantCookie)).body;assert.ok(tenantList.every(t=>t.tenant.id===tenant.id));
-  const techList=(await api('/api/tickets',techCookie)).body;assert.ok(techList.every(t=>t.assignedTo?.id===tech.id));
-  assert.ok((await api('/api/tickets',managerCookie)).body.some(t=>t.id===ticket.id));
+  const tenantList=(await api('/api/tickets',tenantCookie)).body;assert.ok(tenantList.tickets.every(t=>t.tenant.id===tenant.id));
+  const techList=(await api('/api/tickets',techCookie)).body;assert.ok(techList.tickets.every(t=>t.assignedTo?.id===tech.id));
+  assert.ok((await api('/api/tickets',managerCookie)).body.tickets.some(t=>t.id===ticket.id));
   console.log('PASS: transactional workflow notifications and targeted read ownership/unseen retention');
   const racing=(await api('/api/tickets',tenantCookie,'POST',{title:'Concurrent assignment check',description:'Real concurrent requests integration'},201)).body;
   async function race(route,cookie,method,bodies){const results=await Promise.all(bodies.map(body=>fetch(base+route,{method,headers:{cookie,'Content-Type':'application/json'},body:JSON.stringify(body)})));assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);}
@@ -203,6 +203,7 @@ async function main() {
   await api('/api/upload',otherCookie,'DELETE',{imageUrls:abandoned},400);await api('/api/upload',tenantCookie,'DELETE',{imageUrls:abandoned});assert.equal(fs.existsSync(path.join(process.cwd(),'storage/uploads',abandoned[0].split('/').pop())),false);
   assert.equal((await fetch(base+upload[0],{headers:{cookie:tenantCookie}})).status,404);
   console.log('PASS: failed creation cleans only owned unlinked uploads; arbitrary external/private references denied');
+  await require('./ticket-operations.integration.cjs')({db,api,base,load,tenant,manager,manager2,tech,tech2,property,property2,unit,tenantCookie,otherCookie,managerCookie,manager2Cookie,techCookie,tech2Cookie,ticket,imageUrl,legacy});
   const latestOccupant=await db.user.findUnique({where:{id:tenant.id}});
   await api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('tenant'),unitId:null,expectedVersion:latestOccupant.occupancyVersion});
   assert.equal((await api('/api/occupancy',tenantCookie)).body.unit,null);
