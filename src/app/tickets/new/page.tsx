@@ -11,8 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useMutation } from '@/hooks/use-mutation';
 import { requestData, RequestError } from '@/lib/client-request';
 import { useToast } from '@/hooks/use-toast';
+import { useResource } from '@/hooks/use-resource';
+import type { Occupancy } from '@/components/TenantLocation';
+import { LoadingState, ErrorState } from '@/components/RequestState';
 
 export default function NewTicket() {
+    const occupancy = useResource<Occupancy>('/api/occupancy');
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [priority, setPriority] = useState('MEDIUM');
@@ -36,6 +40,7 @@ export default function NewTicket() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!occupancy.data?.unit || occupancy.error || occupancy.loading) return;
         await run(async () => {
             let imageUrls: string[] = [];
             try {
@@ -73,10 +78,12 @@ export default function NewTicket() {
     return (
         <div className="max-w-2xl mx-auto space-y-6">
             <h1 className="text-3xl font-bold tracking-tight">Report an Issue</h1>
+            {occupancy.loading ? <LoadingState label="Loading your assigned unit…" /> : occupancy.error ? <ErrorState error={occupancy.error} retry={occupancy.reload} label="Could not load your assignment" /> : occupancy.data?.unit ? <p className="break-words">{occupancy.data.unit.property.name} · Unit {occupancy.data.unit.identifier}</p> : <p role="status">Your manager must assign you to a unit before you can submit a maintenance request.</p>}
 
             <Card>
                 <CardContent className="pt-6">
                     <form aria-busy={uploading} onSubmit={handleSubmit} className="space-y-4">
+                        <fieldset disabled={uploading || occupancy.loading || !!occupancy.error || !occupancy.data?.unit} className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="issue-title">Title</Label>
                             <Input id="issue-title" maxLength={100} value={title} onChange={e => setTitle(e.target.value)} required minLength={5} placeholder="e.g. Broken AC in Unit 4B" />
@@ -111,6 +118,7 @@ export default function NewTicket() {
                         <Button type="submit" disabled={uploading} className="w-full">
                             {uploading ? 'Submitting...' : 'Submit Ticket'}
                         </Button>
+                        </fieldset>
                     </form>
                 </CardContent>
             </Card>

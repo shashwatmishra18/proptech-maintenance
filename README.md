@@ -1,6 +1,6 @@
 # Property Maintenance Management System
 
-A Next.js maintenance-ticket MVP for tenants, managers, and technicians. Tickets move from OPEN to ASSIGNED to IN_PROGRESS to DONE. Phase 1 role restrictions and private attachments remain enforced.
+A property-aware maintenance application for tenants, managers, and technicians. Managers manage their own properties, units, and tenant assignments. Tickets move from OPEN to ASSIGNED to IN_PROGRESS to DONE; role restrictions and private attachments remain enforced.
 
 ## Requirements
 
@@ -60,6 +60,7 @@ Open http://localhost:3000/login or /register. Public registration creates TENAN
 ## Optional demo seed — destructive
 
 The seed deletes ALL users, tickets, activity logs, images, and notifications from the selected database before creating demo records. Run it only against a disposable development database you explicitly intend to replace. It never runs automatically during install, build, startup, or Docker deployment.
+It now refuses databases containing properties or units before deleting anything. On an eligible disposable database it creates a demo property/unit and assigns the new demo tenant. Re-running it against that populated portfolio is deliberately refused.
 
 ```sh
 npm run prisma:seed
@@ -137,6 +138,26 @@ New uploads live in writable storage/uploads, persisted through the uploads volu
 - GET /api/metrics: role-specific counts.
 - GET/PATCH /api/notifications: recent alerts / mark only supplied notification IDs read (`{ "ids": ["uuid"] }`, maximum ten). PATCH returns the remaining unread count.
 - DELETE /api/upload: tenant cleanup of owned, unlinked private uploads (`{ "imageUrls": [...] }`, maximum five). Linked attachments are retained.
+- GET/POST /api/properties, GET/PATCH /api/properties/:id: manager's own properties.
+- POST /api/properties/:id/units, PATCH /api/properties/:id/units/:unitId: create/edit owned units; no deletion.
+- GET /api/tenant-assignment?email=... and PATCH /api/tenant-assignment: manager exact-email lookup and assignment (`email`, nullable `unitId`, `expectedVersion`).
+- GET /api/occupancy: authenticated tenant's current property/unit, or null.
+
+## Properties, units, and migration
+
+Managers use `/manager/properties` to create/edit properties and units and assign existing tenants. Each property has one owning manager. Unit identifiers are trimmed, normalized to uppercase, and unique within a property; different properties may reuse an identifier. A tenant has at most one current unit; multiple tenants may share a unit. No invitations, deletion, leases, or occupancy history are implemented.
+
+Tenant lookup requires an exact email and returns only unassigned tenants or tenants already in the manager's properties. Managers can move those tenants between their own units or remove an assignment; they cannot claim another manager's occupied tenant. Assignment uses an expected version and locks the tenant row, so stale concurrent changes are rejected. Cross-manager transfers remain deferred.
+
+New ticket requests require an assigned unit. The server locks the same tenant row and derives both location IDs from current occupancy; client-supplied `propertyId` or `unitId` is rejected. Tickets retain that location when the tenant subsequently moves. Property/unit names and addresses reflect current basic information, not a historical snapshot. Technician access remains limited to assigned tickets; technicians have no property browser.
+
+Manager ticket lists, metrics, details, assignment, notes, and attachments require the property's owning manager. New creation/completion notifications go only to that manager, alongside existing tenant/technician notifications. Previous notification records are preserved unchanged and remain recipient-only.
+
+Migration `20261002090000_property_foundation` only adds tables, nullable relations, indexes, and constraints. Existing users, tickets, images, notes/activity, and notifications are retained. The old schema had no separate location column; any free-text location stays in its original title/description. Legacy tickets retain null property/unit, are labelled in the UI, and remain readable by their reporting tenant and assigned technician. Managers cannot access unmapped legacy tickets because ownership is unknown; no association is inferred from current occupancy. A reviewed legacy mapping process remains a future operation.
+
+Apply `npx prisma migrate deploy` before rolling out the new app and regenerate the Prisma client for host development. Do not reset or seed existing databases. The composite foreign key enforces unit/property consistency; only tenants may hold occupancy. No new environment variables are required. The existing readiness probe confirms connectivity, so migration status must still be checked explicitly.
+
+Run `npm test` for all suites, including `scripts/properties.test.cjs`. The existing opt-in `scripts/integration.cjs` now verifies migration field preservation, two-manager isolation, structured and legacy tickets, occupancy/unit concurrency, and the full prior workflow on isolated local PostgreSQL. Container smoke fixtures also include a new local property/unit. Both retain data; neither runs the seed.
 
 ## Core workflow reliability
 
@@ -191,6 +212,11 @@ Known operational limits: unlinked uploads after a process crash or lost respons
 
 ```mermaid
 erDiagram
+    User ||--o{ Property : manages
+    Property ||--o{ Unit : contains
+    Unit o|--o{ User : houses
+    Property o|--o{ Ticket : locates
+    Unit o|--o{ Ticket : locates
     User ||--o{ Ticket : reports
     User ||--o{ Ticket : assigned
     Ticket ||--o{ TicketImage : contains

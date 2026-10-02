@@ -19,6 +19,7 @@ export async function Navbar() {
             <div className="flex items-center gap-2 sm:gap-4">
                 {session ? (
                     <>
+                        {session.role === 'MANAGER' && <Link href="/manager/properties" className="text-sm text-blue-700 min-h-11 inline-flex items-center">Properties</Link>}
                         <NotificationBell />
                         <span className="hidden sm:inline text-sm text-slate-600 capitalize">{session.role.toLowerCase()}</span>
                         <LogoutButton />

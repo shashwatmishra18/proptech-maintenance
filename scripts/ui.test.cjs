@@ -35,6 +35,35 @@ const controls = {
     './RequestState': { LoadingState: 'loading', ErrorState: 'error' },
 };
 
+test('tenant location states explain missing occupancy and structured/legacy ticket context remains visible', () => {
+    const overrides = { './RequestState': controls['./RequestState'], '@/hooks/use-resource': { useResource: () => ({ data: { unit: null }, loading: false, error: null }) } };
+    const location = load('src/components/TenantLocation.tsx', overrides).TenantLocation;
+    assert.match(text(location()), /manager must assign.*Existing tickets/);
+    const view = load('src/components/TicketLocation.tsx').TicketLocation;
+    assert.match(text(view({ ticket: { property: null, unit: null } })), /Legacy.*preserved/);
+    assert.match(text(view({ ticket: { property: { name: 'Rose Court', address: '10 Rose Street' }, unit: { identifier: '4B' } } })), /Rose Court.*4B.*10 Rose/);
+});
+
+test('new-ticket form disables submission until occupancy loads and never submits a client location ID', async () => {
+    let occupancy = { data: { unit: null }, loading: false, error: null, reload() {} }, calls = 0, sent;
+    const page = load('src/app/tickets/new/page.tsx', {
+        react: { ...require('react'), useState: initial => [initial, () => {}] }, 'next/navigation': { useRouter: () => ({ push() {} }) },
+        '@/hooks/use-resource': { useResource: () => occupancy }, '@/hooks/use-toast': { useToast: () => ({ toast() {} }) },
+        '@/hooks/use-mutation': { useMutation: () => ({ pending: false, run: action => action() }) },
+        '@/lib/client-request': { requestData: async (url, options) => { calls++; sent = JSON.parse(options.body); } },
+    }).default;
+    for (const state of [{ data: null, loading: true }, { data: { unit: null }, loading: false }, { data: { unit: { id: 'unit' } }, loading: false, error: Error('Offline') }]) {
+        occupancy = { ...occupancy, ...state };
+        const tree = page(); assert.equal(nodes(tree).find(node => node.type === 'fieldset').props.disabled, true);
+        await nodes(tree).find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+    }
+    assert.equal(calls, 0);
+    occupancy = { data: { unit: { id: 'unit', identifier: '4B', property: { name: 'Home' } } }, loading: false, error: null };
+    const tree = page(); assert.equal(nodes(tree).find(node => node.type === 'fieldset').props.disabled, false);
+    await nodes(tree).find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+    assert.equal(calls, 1); assert.equal('propertyId' in sent, false); assert.equal('unitId' in sent, false);
+});
+
 test('resource failures exit loading, preserve confirmed data, retry, and ignore stale/unmounted responses', async () => {
     let state, ref, effect, cleanup, resolveOld, calls = 0;
     const react = {
