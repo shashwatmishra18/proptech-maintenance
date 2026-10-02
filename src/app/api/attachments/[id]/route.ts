@@ -7,11 +7,12 @@ import { readAttachment } from '@/lib/attachments';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const session = await requireAuth(req);
     if (session instanceof Response) return session;
+    const { id } = await params;
     const image = await prisma.ticketImage.findUnique({
-        where: { id: params.id },
+        where: { id: id },
         include: { ticket: { select: { tenantId: true, assignedToId: true } } },
     });
     if (!image || !authorizeTicketAccess(image.ticket, session)) return errorResponse('Attachment not found', 404);

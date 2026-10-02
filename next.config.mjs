@@ -4,10 +4,8 @@ const nextConfig = {
     output: 'standalone',
     images: { unoptimized: true },
     // bcrypt loads native binaries dynamically, beyond automatic tracing.
-    experimental: {
-        outputFileTracingIncludes: {
-            '/api/auth/*': ['./node_modules/bcrypt/prebuilds/**/*'],
-        },
+    outputFileTracingIncludes: {
+        '/api/auth/*': ['./node_modules/bcrypt/prebuilds/**/*'],
     },
 };
 

@@ -13,15 +13,16 @@ const assignSchema = z.object({
 });
 
 // Manager: Assign Technician
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const payload = await requireRole(req, ['MANAGER']);
         if (payload instanceof Response) return payload;
+        const { id } = await params;
 
         const body = await req.json();
         const data = assignSchema.parse(body);
 
-        const ticket = await TicketService.assign(params.id, data.technicianId, payload.userId);
+        const ticket = await TicketService.assign(id, data.technicianId, payload.userId);
         return successResponse(ticket);
     } catch (error: unknown) {
         return handleApiError(error);
@@ -29,15 +30,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 }
 
 // Technician: Update Status
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const payload = await requireRole(req, ['TECHNICIAN']);
         if (payload instanceof Response) return payload;
+        const { id } = await params;
 
         const body = await req.json();
         const data = updateStatusSchema.parse(body);
 
-        const ticket = await TicketService.updateStatus(params.id, data.status, payload.userId);
+        const ticket = await TicketService.updateStatus(id, data.status, payload.userId);
         return successResponse(ticket);
     } catch (error: unknown) {
         return handleApiError(error);

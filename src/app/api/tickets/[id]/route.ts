@@ -4,15 +4,16 @@ import { requireAuth, authorizeTicketAccess } from '@/lib/roles';
 import { errorResponse, successResponse } from '@/lib/errors/api-response';
 import { attachmentUrl } from '@/lib/attachments';
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const payload = await requireAuth(req);
         if (payload instanceof Response) return payload;
+        const { id } = await params;
 
         const isTech = payload.role === 'TECHNICIAN';
 
         const ticket = await prisma.ticket.findUnique({
-            where: { id: params.id },
+            where: { id: id },
             include: {
                 tenant: {
                     select: isTech

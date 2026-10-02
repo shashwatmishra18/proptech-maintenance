@@ -7,22 +7,23 @@ import { TicketService } from '@/lib/services/TicketService';
 
 const noteSchema = z.object({ note: z.string().min(1).max(1000) });
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const payload = await requireAuth(req);
         if (payload instanceof Response) return payload;
+        const { id } = await params;
 
         const body = await req.json();
         const data = noteSchema.parse(body);
 
-        const ticket = await prisma.ticket.findUnique({ where: { id: params.id } });
+        const ticket = await prisma.ticket.findUnique({ where: { id: id } });
         if (!ticket) return errorResponse('Ticket not found', 404);
 
         if (!authorizeTicketAccess(ticket, payload)) {
             return errorResponse('Forbidden. Access denied.', 403);
         }
 
-        const log = await TicketService.addNote(params.id, payload.userId, data.note);
+        const log = await TicketService.addNote(id, payload.userId, data.note);
 
         return successResponse(log, 201);
     } catch (error: unknown) {

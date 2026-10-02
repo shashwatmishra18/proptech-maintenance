@@ -11,6 +11,7 @@ export async function middleware(req: NextRequest) {
     }
 
     const isApiRoute = path.startsWith('/api/');
+    if (path === '/api/health') return NextResponse.next();
     try { getSessionKey(); } catch {
         return NextResponse.json({ success: false, error: 'JWT_SECRET must be configured with at least 32 characters' }, { status: 503 });
     }
@@ -61,7 +62,7 @@ export async function middleware(req: NextRequest) {
 
     // Add session hardening headers to prevent back-button caching
     const response = NextResponse.next();
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Cache-Control', 'private, no-store, no-cache, must-revalidate, proxy-revalidate');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
 

@@ -33,7 +33,7 @@ export const AuthService = {
 
         const hashed = await bcrypt.hash(pass, 10);
 
-        return prisma.user.create({
+        try { return await prisma.user.create({
             data: {
                 email,
                 password: hashed,
@@ -46,6 +46,12 @@ export const AuthService = {
                 name: true,
                 role: true,
             }
-        });
+        }); } catch (error) {
+            // A concurrent registration may win after the initial lookup.
+            if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+                throw new AppError('Email already exists', 400);
+            }
+            throw error;
+        }
     }
 };
