@@ -9,44 +9,42 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useMutation } from '@/hooks/use-mutation';
+import { requestData } from '@/lib/client-request';
 import { useToast } from '@/hooks/use-toast';
 
 export default function ManagerTicketDetail() {
     const params = useParams();
     const { toast } = useToast();
+    const { pending: mutating, run } = useMutation();
     const [ticket, setTicket] = useState<TicketDetail | null>(null);
     const [technicians, setTechnicians] = useState<UserSummary[]>([]);
     const [selectedTech, setSelectedTech] = useState('');
 
-    const fetchTicket = useCallback(() => {
-        fetch(`/api/tickets/${params.id}`).then(r => r.json()).then(d => {
-            if (d.success) setTicket(d.data);
-        });
+    const fetchTicket = useCallback(async () => {
+        setTicket(await requestData<TicketDetail>('/api/tickets/' + params.id));
     }, [params.id]);
 
     useEffect(() => {
-        fetchTicket();
-        fetch('/api/users?role=TECHNICIAN').then(r => r.json()).then(d => {
-            if (d.success) setTechnicians(d.data);
-        });
-    }, [fetchTicket]);
+        fetchTicket().catch(error => toast({ title: 'Could not load ticket', description: error.message, variant: 'destructive' }));
+        requestData<UserSummary[]>('/api/users?role=TECHNICIAN').then(setTechnicians).catch(error => toast({ title: 'Could not load technicians', description: error.message, variant: 'destructive' }));
+    }, [fetchTicket, toast]);
+
+    const refreshAfterMutation = async () => {
+        try { await fetchTicket(); }
+        catch { toast({ title: 'Change saved', description: 'Details could not refresh. Reload the page before making another change.' }); }
+    };
 
     const handleAssign = async () => {
         if (!selectedTech) return toast({ title: 'Select a technician', variant: 'destructive' });
-
-        const res = await fetch(`/api/tickets/${params.id}/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ technicianId: selectedTech })
-        });
-
-        const data = await res.json();
-        if (res.ok) {
+        await run(async () => {
+            await requestData('/api/tickets/' + params.id + '/status', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ technicianId: selectedTech }),
+            });
             toast({ title: 'Technician assigned successfully' });
-            fetchTicket();
-        } else {
-            toast({ title: 'Failed to assign', description: data.error, variant: 'destructive' });
-        }
+            await refreshAfterMutation();
+        }, 'Failed to assign');
     };
 
     if (!ticket) return <div className="p-8 text-center text-slate-500">Loading ticket details...</div>;
@@ -120,7 +118,7 @@ export default function ManagerTicketDetail() {
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                    <Button onClick={handleAssign} className="w-full">Assign Ticket</Button>
+                                    <Button disabled={mutating} onClick={handleAssign} className="w-full">Assign Ticket</Button>
                                 </>
                             ) : (
                                 <div className="p-4 bg-slate-50 text-sm text-slate-500 rounded-md border text-center">

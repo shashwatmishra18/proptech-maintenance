@@ -134,7 +134,20 @@ New uploads live in writable storage/uploads, persisted through the uploads volu
 - GET /api/attachments/:id: authorized ticket attachment access; private, uncached responses.
 - GET /api/users?role=TECHNICIAN: manager-only technician IDs/names for assignment.
 - GET /api/metrics: role-specific counts.
-- GET/PATCH /api/notifications: recent alerts / mark notifications read.
+- GET/PATCH /api/notifications: recent alerts / mark only supplied notification IDs read (`{ "ids": ["uuid"] }`, maximum ten). PATCH returns the remaining unread count.
+- DELETE /api/upload: tenant cleanup of owned, unlinked private uploads (`{ "imageUrls": [...] }`, maximum five). Linked attachments are retained.
+
+## Core workflow reliability
+
+Ticket creation accepts LOW, MEDIUM, or HIGH priority; omitted priority defaults to MEDIUM. New titles, descriptions, and notes are stored as plain text and rendered through React text expressions. Existing encoded records are not rewritten or automatically decoded.
+
+Creation, assignment, and status changes commit their ticket state, activity logs, and notifications together. Assignment and status changes use conditional updates against the expected previous state; stale or repeated writes return 409. Invalid transitions and completed-ticket notes return 400. Unexpected errors return a generic 500 response.
+
+Attachment consumption and cleanup serialize on the uploader's existing database row. Cleanup only removes owned private files without a ticket reference; legacy and linked attachments are never removed. Partial writes are cleaned up immediately, and failed ticket creation attempts clean up known uploads. A lost upload response or process crash can still leave an unlinked file; no automatic historical cleanup is performed.
+
+Mutation forms guard duplicate clicks and restore their buttons after failures. Logout clears the session cookie and navigates to login after success. Notification reads target the displayed subset, and local read state changes only after server confirmation.
+
+Run focused regression coverage with `node --test scripts/security.test.cjs scripts/reliability.test.cjs`. Reliability tests exercise real handlers/services with mocked database transactions, filesystem operations, and client hooks; they do not replace integration tests against PostgreSQL.
 
 ## Workflow Logic & Architecture
 

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Button } from './ui/button';
 import { getSession } from '@/lib/auth';
 import { NotificationBell } from './NotificationBell';
+import { LogoutButton } from './LogoutButton';
 
 export async function Navbar() {
     const session = await getSession();
@@ -20,9 +21,7 @@ export async function Navbar() {
                     <>
                         <NotificationBell />
                         <div className="text-sm font-medium mr-4">Role: {session.role}</div>
-                        <form action="/api/auth/logout" method="POST">
-                            <Button type="submit" variant="outline" size="sm">Logout</Button>
-                        </form>
+                        <LogoutButton />
                     </>
                 ) : (
                     <>

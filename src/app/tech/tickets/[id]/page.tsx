@@ -9,58 +9,53 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useMutation } from '@/hooks/use-mutation';
+import { requestData } from '@/lib/client-request';
 import { useToast } from '@/hooks/use-toast';
 
 export default function TechTicketDetail() {
     const params = useParams();
     const { toast } = useToast();
+    const { pending: mutating, run } = useMutation();
     const [ticket, setTicket] = useState<TicketDetail | null>(null);
     const [note, setNote] = useState('');
-    const [addingNote, setAddingNote] = useState(false);
 
-    const fetchTicket = useCallback(() => {
-        fetch(`/api/tickets/${params.id}`).then(r => r.json()).then(d => {
-            if (d.success) setTicket(d.data);
-        });
+    const fetchTicket = useCallback(async () => {
+        setTicket(await requestData<TicketDetail>('/api/tickets/' + params.id));
     }, [params.id]);
 
     useEffect(() => {
-        fetchTicket();
-    }, [fetchTicket]);
+        fetchTicket().catch(error => toast({ title: 'Could not load ticket', description: error.message, variant: 'destructive' }));
+
+    }, [fetchTicket, toast]);
+
+    const refreshAfterMutation = async () => {
+        try { await fetchTicket(); }
+        catch { toast({ title: 'Change saved', description: 'Details could not refresh. Reload the page before making another change.' }); }
+    };
 
     const handleStatusUpdate = async (newStatus: string) => {
-        const res = await fetch(`/api/tickets/${params.id}/status`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus })
-        });
-        const data = await res.json();
-        if (res.ok) {
+        await run(async () => {
+            await requestData('/api/tickets/' + params.id + '/status', {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
             toast({ title: 'Status updated' });
-            fetchTicket();
-        } else {
-            toast({ title: 'Failed to update', description: data.error, variant: 'destructive' });
-        }
+            await refreshAfterMutation();
+        }, 'Failed to update');
     };
 
     const handleAddNote = async () => {
         if (!note.trim()) return;
-        setAddingNote(true);
-        const res = await fetch(`/api/tickets/${params.id}/notes`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ note })
-        });
-        const data = await res.json();
-        setAddingNote(false);
-
-        if (res.ok) {
+        await run(async () => {
+            await requestData('/api/tickets/' + params.id + '/notes', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note }),
+            });
             toast({ title: 'Note added' });
             setNote('');
-            fetchTicket();
-        } else {
-            toast({ title: 'Failed to add note', description: data.error, variant: 'destructive' });
-        }
+            await refreshAfterMutation();
+        }, 'Failed to add note');
     };
 
     if (!ticket) return <div className="p-8 text-center text-slate-500">Loading ticket details...</div>;
@@ -124,10 +119,10 @@ export default function TechTicketDetail() {
                         <CardHeader><CardTitle>Update Status</CardTitle></CardHeader>
                         <CardContent className="space-y-4 text-center">
                             {ticket.status === 'ASSIGNED' && (
-                                <Button onClick={() => handleStatusUpdate('IN_PROGRESS')} className="w-full bg-orange-600 hover:bg-orange-700">Mark In Progress</Button>
+                                <Button disabled={mutating} onClick={() => handleStatusUpdate('IN_PROGRESS')} className="w-full bg-orange-600 hover:bg-orange-700">Mark In Progress</Button>
                             )}
                             {ticket.status === 'IN_PROGRESS' && (
-                                <Button onClick={() => handleStatusUpdate('DONE')} className="w-full bg-green-600 hover:bg-green-700">Mark Done</Button>
+                                <Button disabled={mutating} onClick={() => handleStatusUpdate('DONE')} className="w-full bg-green-600 hover:bg-green-700">Mark Done</Button>
                             )}
                             {ticket.status === 'DONE' && (
                                 <div className="p-4 bg-green-50 text-green-700 border border-green-200 rounded-md">Ticket Completed</div>
@@ -140,7 +135,7 @@ export default function TechTicketDetail() {
                             <CardHeader><CardTitle>Add Note</CardTitle></CardHeader>
                             <CardContent className="space-y-4">
                                 <Textarea placeholder="Type your note here..." value={note} onChange={e => setNote(e.target.value)} />
-                                <Button onClick={handleAddNote} disabled={addingNote} variant="outline" className="w-full">Post Note</Button>
+                                <Button onClick={handleAddNote} disabled={mutating} variant="outline" className="w-full">Post Note</Button>
                             </CardContent>
                         </Card>
                     )}

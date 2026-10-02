@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useMutation } from '@/hooks/use-mutation';
+import { requestData, RequestError } from '@/lib/client-request';
 import { useToast } from '@/hooks/use-toast';
 
 export default function NewTicket() {
@@ -15,7 +17,7 @@ export default function NewTicket() {
     const [description, setDescription] = useState('');
     const [priority, setPriority] = useState('MEDIUM');
     const [files, setFiles] = useState<File[]>([]);
-    const [uploading, setUploading] = useState(false);
+    const { pending: uploading, run } = useMutation();
     const { toast } = useToast();
     const router = useRouter();
 
@@ -32,43 +34,38 @@ export default function NewTicket() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setUploading(true);
-
-        let imageUrls: string[] = [];
-
-        if (files.length > 0) {
-            const formData = new FormData();
-            files.forEach(file => formData.append('file', file));
-
-            const uploadRes = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData,
-            });
-            const uploadData = await uploadRes.json();
-
-            if (!uploadRes.ok) {
-                setUploading(false);
-                toast({ title: 'Upload failed', description: uploadData.error, variant: 'destructive' });
-                return;
+        await run(async () => {
+            let imageUrls: string[] = [];
+            try {
+                if (files.length > 0) {
+                    const formData = new FormData();
+                    files.forEach(file => formData.append('file', file));
+                    const upload = await requestData<{ imageUrls: string[] }>('/api/upload', { method: 'POST', body: formData });
+                    imageUrls = upload.imageUrls;
+                }
+                await requestData('/api/tickets', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, description, priority, imageUrls }),
+                });
+            } catch (error) {
+                if (imageUrls.length > 0) {
+                    try {
+                        await requestData('/api/upload', {
+                            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ imageUrls }),
+                        });
+                    } catch {
+                        throw new Error('Ticket submission failed and upload cleanup could not be confirmed. Refresh your tickets before trying again.');
+                    }
+                }
+                if (error instanceof RequestError && error.uncertain) {
+                    throw new Error('The ticket response could not be confirmed. Refresh your tickets before submitting again; the request may have completed.');
+                }
+                throw error;
             }
-            imageUrls = uploadData.data.imageUrls;
-        }
-
-        const res = await fetch('/api/tickets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, description, priority, imageUrls }),
-        });
-
-        const data = await res.json();
-        setUploading(false);
-
-        if (res.ok) {
             toast({ title: 'Ticket created successfully' });
             router.push('/dashboard');
-        } else {
-            toast({ title: 'Failed to create ticket', description: data.error, variant: 'destructive' });
-        }
+        }, 'Failed to create ticket');
     };
 
     return (

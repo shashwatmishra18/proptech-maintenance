@@ -6,6 +6,8 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { useMutation } from '@/hooks/use-mutation';
+import { requestData } from '@/lib/client-request';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Login() {
@@ -13,24 +15,19 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const { toast } = useToast();
     const router = useRouter();
+    const { pending, run } = useMutation();
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        const res = await fetch('/api/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({ email, password }),
-            headers: { 'Content-Type': 'application/json' },
-        });
-
-        const data = await res.json();
-        if (res.ok) {
+        await run(async () => {
+            const user = await requestData<{ role: string }>('/api/auth/login', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password }),
+            });
             toast({ title: 'Login successful' });
-            if (data.data.role === 'TENANT') router.push('/dashboard');
-            else if (data.data.role === 'MANAGER') router.push('/manager/dashboard');
-            else if (data.data.role === 'TECHNICIAN') router.push('/tech/dashboard');
-        } else {
-            toast({ title: 'Login failed', description: data.error, variant: 'destructive' });
-        }
+            router.push(user.role === 'MANAGER' ? '/manager/dashboard' : user.role === 'TECHNICIAN' ? '/tech/dashboard' : '/dashboard');
+            router.refresh();
+        }, 'Login failed');
     };
 
     return (
@@ -50,7 +47,7 @@ export default function Login() {
                             <Label>Password</Label>
                             <Input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
                         </div>
-                        <Button type="submit" className="w-full">Sign In</Button>
+                        <Button type="submit" disabled={pending} className="w-full">Sign In</Button>
                     </form>
                 </CardContent>
             </Card>

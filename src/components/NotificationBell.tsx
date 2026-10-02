@@ -2,38 +2,57 @@
 
 import type { NotificationSummary } from '@/lib/types';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import { requestData } from '@/lib/client-request';
+import { useToast } from '@/hooks/use-toast';
 
 export function NotificationBell() {
     const [notifications, setNotifications] = useState<NotificationSummary[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [open, setOpen] = useState(false);
+    const reading = useRef(false);
+    const revision = useRef(0);
+    const { toast } = useToast();
+
+    const fetchData = useCallback(async () => {
+        if (reading.current) return;
+        const version = ++revision.current;
+        try {
+            const data = await requestData<{ notifications: NotificationSummary[]; unreadCount: number }>('/api/notifications');
+            if (version !== revision.current) return;
+            setNotifications(data.notifications);
+            setUnreadCount(data.unreadCount);
+        } catch {
+            // Keep the last confirmed state when background polling fails.
+        }
+    }, []);
 
     useEffect(() => {
         fetchData();
         // In a real app we'd use WebSockets or SSE, for MVP we poll every 30s
         const interval = setInterval(fetchData, 30000);
         return () => clearInterval(interval);
-    }, []);
-
-    const fetchData = async () => {
-        const res = await fetch('/api/notifications');
-        if (res.ok) {
-            const data = await res.json();
-            if (data.success) {
-                setNotifications(data.data.notifications);
-                setUnreadCount(data.data.unreadCount);
-            }
-        }
-    };
+    }, [fetchData]);
 
     const markAsRead = async () => {
-        if (unreadCount === 0) return;
-        await fetch('/api/notifications', { method: 'PATCH' });
-        setUnreadCount(0);
+        const ids = notifications.filter(n => !n.read).map(n => n.id);
+        if (ids.length === 0 || reading.current) return;
+        reading.current = true;
+        revision.current++;
+        try {
+            const result = await requestData<{ unreadCount: number }>('/api/notifications', {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+            });
+            setUnreadCount(result.unreadCount);
+            setNotifications(current => current.map(n => ids.includes(n.id) ? { ...n, read: true } : n));
+        } catch (error) {
+            toast({ title: 'Could not mark notifications read', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+        } finally {
+            reading.current = false;
+        }
     };
 
     return (
