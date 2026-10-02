@@ -2,7 +2,6 @@ import { prisma } from '../prisma';
 import bcrypt from 'bcrypt';
 import { AppError } from '../errors/api-response';
 import { setSessionCookie } from '../auth';
-import { Role } from '@prisma/client';
 
 export const AuthService = {
     login: async (email: string, pass: string) => {
@@ -28,7 +27,7 @@ export const AuthService = {
         };
     },
 
-    register: async (email: string, pass: string, name: string, role: Role = 'TENANT') => {
+    register: async (email: string, pass: string, name: string) => {
         const existing = await prisma.user.findUnique({ where: { email } });
         if (existing) throw new AppError('Email already exists', 400);
 
@@ -39,7 +38,7 @@ export const AuthService = {
                 email,
                 password: hashed,
                 name,
-                role,
+                role: 'TENANT',
             },
             select: {
                 id: true,

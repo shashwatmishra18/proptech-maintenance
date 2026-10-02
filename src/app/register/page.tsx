@@ -7,13 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 export default function Register() {
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
     const [password, setPassword] = useState('');
-    const [role, setRole] = useState('TENANT');
     const { toast } = useToast();
     const router = useRouter();
 
@@ -21,7 +19,7 @@ export default function Register() {
         e.preventDefault();
         const res = await fetch('/api/auth/register', {
             method: 'POST',
-            body: JSON.stringify({ email, password, name, role }),
+            body: JSON.stringify({ email, password, name }),
             headers: { 'Content-Type': 'application/json' },
         });
 
@@ -54,19 +52,6 @@ export default function Register() {
                         <div className="space-y-2">
                             <Label>Password</Label>
                             <Input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Role</Label>
-                            <Select value={role} onValueChange={setRole}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="TENANT">Tenant</SelectItem>
-                                    <SelectItem value="MANAGER">Manager</SelectItem>
-                                    <SelectItem value="TECHNICIAN">Technician</SelectItem>
-                                </SelectContent>
-                            </Select>
                         </div>
                         <Button type="submit" className="w-full">Register</Button>
                     </form>

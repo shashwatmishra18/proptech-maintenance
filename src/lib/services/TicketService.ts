@@ -3,6 +3,7 @@ import { AppError } from '../errors/api-response';
 import { NotificationService } from './NotificationService';
 import { Priority, Status, Ticket } from '@prisma/client';
 import { escapeHtml } from '../utils';
+import { attachmentUrl } from '../attachments';
 
 export const TicketService = {
     getAllForUser: async (user: { userId: string, role: string }, status?: Status) => {
@@ -20,7 +21,7 @@ export const TicketService = {
 
         const isTech = user.role === 'TECHNICIAN';
 
-        return prisma.ticket.findMany({
+        const tickets = await prisma.ticket.findMany({
             where,
             select: {
                 id: true,
@@ -40,6 +41,7 @@ export const TicketService = {
             },
             orderBy: { createdAt: 'desc' }
         });
+        return tickets.map(ticket => ({ ...ticket, images: ticket.images.map(image => ({ ...image, imageUrl: attachmentUrl(image.id) })) }));
     },
 
     create: async (data: { title: string; description: string; priority: Priority; tenantId: string }, imageUrls: string[]) => {

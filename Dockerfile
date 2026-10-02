@@ -33,7 +33,7 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Set correct permission for prerender cache and uploads
-RUN mkdir -p public/uploads && chown nextjs:nodejs public/uploads
+RUN mkdir -p public/uploads storage/uploads && chown nextjs:nodejs public/uploads storage/uploads
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authorizeTicketAccess } from '@/lib/roles';
 import { errorResponse, successResponse } from '@/lib/errors/api-response';
+import { attachmentUrl } from '@/lib/attachments';
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
     try {
@@ -35,8 +36,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         }
         // MANAGER can view all
 
-        return successResponse(ticket);
-    } catch (error: any) {
+        return successResponse({ ...ticket, images: ticket.images.map(image => ({ ...image, imageUrl: attachmentUrl(image.id) })) });
+    } catch {
         return errorResponse('Failed to fetch ticket details', 500);
     }
 }

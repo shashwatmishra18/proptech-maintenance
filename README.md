@@ -19,10 +19,13 @@ Ensure you have Node.js 18+ and Docker installed.
    ```
 
 3. **Environment Variables**
-   Rename `.env.example` to `.env` (or just use the provided `.env` if already generated).
+   Copy `.env.example` to `.env` and configure your database and a random JWT secret of at least 32 characters. Real environment files are ignored by Git. Generate the secret locally (never commit it):
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+   ```
    ```text
-   DATABASE_URL="postgresql://proptech:password123@localhost:5432/proptech_db?schema=public"
-   JWT_SECRET="super-secret-key-change-me-in-production"
+   DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public"
+   JWT_SECRET=""
    ```
 
 4. **Initialize DB & Seed**
@@ -61,14 +64,14 @@ To build and run the entire application using Docker:
    ```bash
    docker build -t proptech-app .
    ```
-2. For production, add the Next.js service to `docker-compose.yml` to run alongside Postgres, and volume mount `./public/uploads` for persistence.
+2. For production, add the Next.js service to `docker-compose.yml` to run alongside Postgres. Inject environment variables at runtime and persist writable `storage/uploads`. Preserve any legacy `public/uploads` directory, but never serve it directly through a proxy or static file host.
 
 ---
 
 ## API Documentation
 
 - `POST /api/auth/login` - Authenticate
-- `POST /api/auth/register` - Register a demo user
+- `POST /api/auth/register` - Register a tenant; staff roles are rejected. Existing staff accounts remain supported.
 - `POST /api/auth/logout` - Clear session
 
 - `POST /api/tickets` - [Tenant] Create new ticket
@@ -77,7 +80,9 @@ To build and run the entire application using Docker:
 - `POST /api/tickets/:id/status` - [Manager] Assign technician (`{ technicianId: "" }`)
 - `PATCH /api/tickets/:id/status` - [Tech] Update status (`{ status: "IN_PROGRESS" | "DONE" }`)
 - `POST /api/tickets/:id/notes` - Add a note to activity log
-- `POST /api/upload` - Upload up to 5 images (JPG/PNG max 5MB)
+- `POST /api/upload` - [Tenant] Upload up to 5 images (JPG/PNG max 5MB) to private local storage; only the uploader can attach them to a new ticket.
+- `GET /api/attachments/:id` - Stream an attachment after authenticating and authorizing access to its ticket. Ticket responses supply these protected image URLs, including for legacy attachments. Direct `/uploads` and shared image-optimizer access are blocked.
+- `GET /api/users?role=TECHNICIAN` - [Manager] Technician IDs and names for assignment
 - `GET /api/metrics` - Fetch aggregated role-based metrics counts
 - `GET /api/notifications` - Fetch unread counts and recent alerts
 - `PATCH /api/notifications` - Mark notifications read

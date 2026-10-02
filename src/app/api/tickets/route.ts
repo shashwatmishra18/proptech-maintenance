@@ -4,6 +4,7 @@ import { TicketService } from '@/lib/services/TicketService';
 import { AppError, errorResponse, successResponse } from '@/lib/errors/api-response';
 import { requireAuth, requireRole } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
+import { validateOwnedUploads } from '@/lib/attachments';
 
 const createTicketSchema = z.object({
     title: z.string().min(5).max(100),
@@ -11,7 +12,7 @@ const createTicketSchema = z.object({
     priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional().default('MEDIUM'),
     status: z.any().optional(),
     assignedToId: z.any().optional(),
-    imageUrls: z.array(z.string().url().or(z.string().startsWith('/uploads/'))).max(5).default([]),
+    imageUrls: z.array(z.string().startsWith('/api/attachments/files/')).max(5).default([]),
 });
 
 export async function POST(req: NextRequest) {
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
 
         const body = await req.json();
         const data = createTicketSchema.parse(body);
+        await validateOwnedUploads(data.imageUrls, payload.userId);
 
         const ticket = await TicketService.create(
             {

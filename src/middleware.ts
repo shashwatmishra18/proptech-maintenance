@@ -1,14 +1,19 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { jwtVerify } from 'jose';
-
-const secretKey = process.env.JWT_SECRET || 'super-secret-key-change-me-in-production';
-const key = new TextEncoder().encode(secretKey);
+import { getSessionKey, verifyToken } from '@/lib/session';
 
 export async function middleware(req: NextRequest) {
     const path = req.nextUrl.pathname;
 
+    // Legacy files remain on disk, but may only be served by the authorized API.
+    if (path === '/uploads' || path.startsWith('/uploads/') || path === '/_next/image') {
+        return new NextResponse(null, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+    }
+
     const isApiRoute = path.startsWith('/api/');
+    try { getSessionKey(); } catch {
+        return NextResponse.json({ success: false, error: 'JWT_SECRET must be configured with at least 32 characters' }, { status: 503 });
+    }
 
     // Allow public API auth routes
     if (path.startsWith('/api/auth/')) {
@@ -26,9 +31,9 @@ export async function middleware(req: NextRequest) {
 
     let payload;
     try {
-        const verified = await jwtVerify(session, key, { algorithms: ['HS256'] });
-        payload = verified.payload as { userId: string; role: string; exp: number };
-    } catch (error) {
+        payload = await verifyToken(session);
+        if (!payload) throw new Error('Invalid session');
+    } catch {
         const response = isApiRoute
             ? NextResponse.json({ success: false, error: 'Invalid Token' }, { status: 401 })
             : NextResponse.redirect(new URL('/login', req.url));
@@ -69,6 +74,8 @@ export const config = {
         '/tech/:path*',
         '/dashboard/:path*',
         '/tickets/:path*',
+        '/uploads/:path*',
+        '/_next/image',
         '/api/(.*)'
     ],
 };
