@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit --incremental false",
     "prisma:seed:check": "ts-node --project tsconfig.seed.json prisma/seed.ts --check",
     "postbuild": "node scripts/strip-build-env.cjs",
-    "test": "node --test scripts/security.test.cjs scripts/reliability.test.cjs scripts/ui.test.cjs scripts/release.test.cjs"
+    "test": "node --test scripts/security.test.cjs scripts/reliability.test.cjs scripts/ui.test.cjs scripts/release.test.cjs scripts/properties.test.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

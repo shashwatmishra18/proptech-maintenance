@@ -16,11 +16,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const body = await req.json();
         const data = noteSchema.parse(body);
 
-        const ticket = await prisma.ticket.findUnique({ where: { id: id } });
+        const ticket = await prisma.ticket.findUnique({ where: { id: id }, include: { property: { select: { managerId: true } } } });
         if (!ticket) return errorResponse('Ticket not found', 404);
 
         if (!authorizeTicketAccess(ticket, payload)) {
-            return errorResponse('Forbidden. Access denied.', 403);
+            return errorResponse(payload.role === 'MANAGER' ? 'Ticket not found' : 'Forbidden. Access denied.', payload.role === 'MANAGER' ? 404 : 403);
         }
 
         const log = await TicketService.addNote(id, payload.userId, data.note);

@@ -33,9 +33,19 @@ async function api(route, cookie='', method='GET', data, expected=200) {
 async function login(email) { const {res}=await api('/api/auth/login','','POST',{email,password}); const cookie=res.headers.get('set-cookie'); assert.match(cookie,/HttpOnly/i);assert.match(cookie,/SameSite=lax/i);assert.match(cookie,/Secure/i);return cookie.split(';')[0]; }
 function form() { const f=new FormData(); f.append('file',new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=','base64')],{type:'image/png'}),'test.png');return f; }
 async function main() {
+  // Snapshot every existing record before the additive migration; compare all old fields after it.
+  const tables=['User','Ticket','TicketImage','ActivityLog','Notification'];
+  const snapshots={};
+  for(const table of tables) snapshots[table]=await db.$queryRawUnsafe('SELECT row_to_json(t) AS record FROM "'+table+'" t');
   for(const args of [['migrate','deploy'],['migrate','status']]) {
     const result=cp.spawnSync(process.execPath,['node_modules/prisma/build/index.js',...args],{env:process.env,stdio:'inherit'});assert.equal(result.status,0);
   }
+  for(const table of tables) {
+    const after=await db.$queryRawUnsafe('SELECT row_to_json(t) AS record FROM "'+table+'" t');
+    const records=new Map(after.map(row=>[row.record.id,row.record]));
+    for(const row of snapshots[table]) for(const [key,value] of Object.entries(row.record)) assert.deepEqual(records.get(row.record.id)?.[key],value,table+' existing field '+key);
+  }
+  console.log('PASS: additive migration preserves every existing user, ticket, image, activity and notification field');
   const connection=await db.$queryRaw`SELECT current_database() AS database, inet_server_addr()::text AS address, version() AS version`;
   assert.equal(connection[0].database,'proptech_db'); console.log('PASS: live PostgreSQL connection and migration status');
   server=cp.spawn(process.execPath,['node_modules/next/dist/bin/next','start','-p','3103','-H','127.0.0.1'],{env:{...process.env,NODE_ENV:'production'},stdio:['ignore','pipe','pipe']});
@@ -50,9 +60,52 @@ async function main() {
   await api('/api/auth/register','','POST',{name:'Integration Tenant',email:email('tenant'),password},400);
   const bcrypt=req('bcrypt');const hash=await bcrypt.hash(password,10);
   const manager=await db.user.create({data:{name:'Integration Manager',email:email('manager'),password:hash,role:'MANAGER'}});
+  const manager2=await db.user.create({data:{name:'Other Manager',email:email('manager2'),password:hash,role:'MANAGER'}});
   const tech=await db.user.create({data:{name:'Integration Tech',email:email('tech'),password:hash,role:'TECHNICIAN'}});
   const tech2=await db.user.create({data:{name:'Integration Tech Two',email:email('tech2'),password:hash,role:'TECHNICIAN'}});
   const tenantCookie=await login(email('tenant')),otherCookie=await login(email('other')),managerCookie=await login(email('manager')),techCookie=await login(email('tech')),tech2Cookie=await login(email('tech2'));
+  const manager2Cookie=await login(email('manager2'));
+  const propertyBody={name:'Integration Property',address:'10 Integration Street',description:'Local test property'};
+  await api('/api/properties',tenantCookie,'POST',propertyBody,403);
+  await api('/api/properties',techCookie,'GET',undefined,403);
+  await api('/api/properties/'+manager.id,managerCookie,'PATCH',propertyBody,404);
+  await api('/api/properties/not-a-uuid',managerCookie,'GET',undefined,400);
+  const property=(await api('/api/properties',managerCookie,'POST',propertyBody,201)).body;
+  const property2=(await api('/api/properties',manager2Cookie,'POST',{...propertyBody,name:'Other Property'},201)).body;
+  await api('/api/properties/'+property.id,manager2Cookie,'GET',undefined,404);
+  await api('/api/properties/'+property.id,manager2Cookie,'PATCH',propertyBody,404);
+  await api('/api/properties/'+property.id,managerCookie,'PATCH',{...propertyBody,name:'Updated Property'});
+  const unit=(await api('/api/properties/'+property.id+'/units',managerCookie,'POST',{identifier:' 4b ',floor:'4'},201)).body;
+  assert.equal(unit.identifier,'4B');
+  await api('/api/properties/'+property.id+'/units',managerCookie,'POST',{identifier:'4b'},409);
+  const unit2=(await api('/api/properties/'+property2.id+'/units',manager2Cookie,'POST',{identifier:'4B'},201)).body;
+  const ownUnit2=(await api('/api/properties/'+property.id+'/units',managerCookie,'POST',{identifier:'5B'},201)).body;
+  const ownProperty2=(await api('/api/properties',managerCookie,'POST',{...propertyBody,name:'Second Owned Property'},201)).body;
+  const ownUnit3=(await api('/api/properties/'+ownProperty2.id+'/units',managerCookie,'POST',{identifier:'4B'},201)).body;
+  assert.ok((await api('/api/properties',managerCookie)).body.every(item=>item.managerId===manager.id));
+  await api('/api/properties/'+property.id+'/units/'+unit.id,manager2Cookie,'PATCH',{identifier:'Hacked'},404);
+  await api('/api/properties/'+property2.id+'/units/'+unit.id,managerCookie,'PATCH',{identifier:'Hacked'},404);
+  await api('/api/properties/'+property.id+'/units/'+unit.id,managerCookie,'PATCH',{identifier:'4B',floor:'Fourth floor'});
+  await api('/api/properties/'+property.id,techCookie,'GET',undefined,403);
+  assert.equal((await api('/api/occupancy',tenantCookie)).body.unit,null);
+  const sampleBody={title:'Location test',description:'Property-aware integration request'};
+  await api('/api/tickets',tenantCookie,'POST',sampleBody,409);
+  await api('/api/tenant-assignment',tenantCookie,'PATCH',{email:email('tenant'),unitId:unit.id,expectedVersion:0},403);
+  await api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('tenant'),unitId:unit2.id,expectedVersion:0},404);
+  await api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('tenant'),unitId:unit.id,expectedVersion:0});
+  await api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('other'),unitId:unit.id,expectedVersion:0});
+  assert.equal((await api('/api/occupancy',tenantCookie)).body.unit.id,unit.id);
+  assert.equal('password' in (await api('/api/tenant-assignment?email='+encodeURIComponent(email('tenant')),managerCookie)).body,false);
+  await api('/api/tenant-assignment?email='+encodeURIComponent(email('tenant')),manager2Cookie,'GET',undefined,404);
+  await api('/api/tenant-assignment',manager2Cookie,'PATCH',{email:email('tenant'),unitId:unit2.id,expectedVersion:1},404);
+  await api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('tenant'),unitId:ownUnit2.id,expectedVersion:0},409);
+  await api('/api/tickets',tenantCookie,'POST',{...sampleBody,unitId:unit2.id,propertyId:property2.id},400);
+  // A legacy ticket remains readable to its reporter and assigned technician; no manager ownership is invented.
+  const legacy=await db.ticket.create({data:{...sampleBody,title:'Legacy location in original description',tenantId:tenant.id,assignedToId:tech.id,status:'ASSIGNED'}});
+  assert.equal((await api('/api/tickets/'+legacy.id,tenantCookie)).body.property,null);
+  assert.equal((await api('/api/tickets/'+legacy.id,techCookie)).body.unit,null);
+  await api('/api/tickets/'+legacy.id,managerCookie,'GET',undefined,404);
+  console.log('PASS: property/unit ownership, normalized uniqueness, assignment boundaries, unassigned/spoof rejection and legacy compatibility');
   await api('/api/tickets','','GET',undefined,401);await api('/api/tickets','session=invalid','GET',undefined,401);
   await api('/api/auth/login','','POST',{email:email('tenant'),password:'wrong-password'},400);
   await api('/api/auth/register','','POST',{name:'Escalation',email:email('attack-tech'),password,role:'TECHNICIAN'},400);
@@ -65,6 +118,13 @@ async function main() {
   const title='Kitchen <tap> & sink';const description='Water leaking & needs <repair> today';
   const ticket=(await api('/api/tickets',tenantCookie,'POST',{title,description,priority:'HIGH',imageUrls:upload},201)).body;
   const read=await db.ticket.findUnique({where:{id:ticket.id}});assert.equal(read.priority,'HIGH');assert.equal(read.title,title);assert.equal(read.description,description);assert.equal(read.status,'OPEN');
+  assert.equal(read.propertyId,property.id);assert.equal(read.unitId,unit.id);
+  await api('/api/tickets/'+ticket.id,manager2Cookie,'GET',undefined,404);
+  await api('/api/tickets/'+ticket.id+'/notes',manager2Cookie,'POST',{note:'Cross-property note'},404);
+  await api('/api/tickets/'+ticket.id+'/status',manager2Cookie,'POST',{technicianId:tech.id},404);
+  assert.equal((await api('/api/tickets',manager2Cookie)).body.length,0);
+  assert.equal((await api('/api/metrics',manager2Cookie)).body.total,0);
+  assert.equal(await db.notification.count({where:{userId:manager2.id}}),0);
   for(const priority of ['LOW','MEDIUM','URGENT']) {const t=(await api('/api/tickets',tenantCookie,'POST',{title:'Priority check '+priority,description:'Priority persistence integration',priority},201)).body;assert.equal((await db.ticket.findUnique({where:{id:t.id}})).priority,priority);}
   const defaultTicket=(await api('/api/tickets',tenantCookie,'POST',{title:'Default priority check',description:'Default priority integration test'},201)).body;assert.equal(defaultTicket.priority,'MEDIUM');
   await api('/api/tickets',tenantCookie,'POST',{title,description,priority:'INVALID'},400);
@@ -72,6 +132,7 @@ async function main() {
   await api('/api/tickets?status=INVALID',tenantCookie,'GET',undefined,400);await api('/api/users?role=INVALID',managerCookie,'GET',undefined,400);
   console.log('PASS: creation, all schema priorities including URGENT, default, raw text and filter validation');
   const detail=(await api('/api/tickets/'+ticket.id,tenantCookie)).body;const imageUrl=detail.images[0].imageUrl;
+  assert.equal((await fetch(base+imageUrl,{headers:{cookie:manager2Cookie}})).status,404);
   assert.equal((await fetch(base+imageUrl)).status,401);assert.equal((await fetch(base+imageUrl,{headers:{cookie:otherCookie}})).status,404);assert.equal((await fetch(base+imageUrl,{headers:{cookie:techCookie}})).status,404);
   for(const cookie of [tenantCookie,managerCookie]) {const r=await fetch(base+imageUrl,{headers:{cookie}});assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'image/png');assert.match(r.headers.get('cache-control'),/private/);}
   await api('/api/upload',tenantCookie,'DELETE',{imageUrls:upload});assert.equal((await fetch(base+imageUrl,{headers:{cookie:tenantCookie}})).status,200);
@@ -85,11 +146,13 @@ async function main() {
   await api(statusRoute,tenantCookie,'POST',{technicianId:tech.id},403);
   await api(statusRoute,managerCookie,'POST',{technicianId:tech.id});assert.equal((await db.ticket.findUnique({where:{id:ticket.id}})).status,'ASSIGNED');
   assert.equal((await fetch(base+imageUrl,{headers:{cookie:techCookie}})).status,200);
+  assert.equal((await api('/api/tickets/'+ticket.id,techCookie)).body.unit.identifier,'4B');
   await api(statusRoute,managerCookie,'POST',{technicianId:tech2.id},409);await api(statusRoute,tech2Cookie,'PATCH',{status:'IN_PROGRESS'},403);await api(statusRoute,techCookie,'PATCH',{status:'DONE'},400);
   await api('/api/tickets/'+ticket.id+'/notes',techCookie,'POST',{note:'Checked <valve> & fitting'},201);
   assert.ok(await db.activityLog.findFirst({where:{ticketId:ticket.id,action:'Note added: Checked <valve> & fitting'}}));
   await api(statusRoute,techCookie,'PATCH',{status:'IN_PROGRESS'});await api(statusRoute,techCookie,'PATCH',{status:'IN_PROGRESS'},409);await api(statusRoute,techCookie,'PATCH',{status:'DONE'});await api(statusRoute,techCookie,'PATCH',{status:'DONE'},409);
   await api('/api/tickets/'+ticket.id+'/notes',techCookie,'POST',{note:'Late note'},400);assert.equal((await db.ticket.findUnique({where:{id:ticket.id}})).status,'DONE');
+  assert.equal(await db.notification.count({where:{userId:manager2.id}}),0);
   console.log('PASS: manager assignment, technician lifecycle, notes, ownership and stale conflicts');
   await db.notification.createMany({data:Array.from({length:12},(_,i)=>({userId:tenant.id,message:'Integration unread '+i}))});
   const notifications=(await api('/api/notifications',tenantCookie)).body;assert.equal(notifications.notifications.length,10);assert.ok(notifications.unreadCount>10);
@@ -108,6 +171,23 @@ async function main() {
   await race('/api/tickets/'+racing.id+'/status',winnerCookie,'PATCH',[{status:'DONE'},{status:'DONE'}]);
   assert.equal(await db.activityLog.count({where:{ticketId:racing.id}}),4);
   console.log('PASS: concurrent assignment/start/completion: one winner, one 409, no duplicate logs');
+  const assignmentRace=await Promise.all([unit.id,ownUnit2.id].map(unitId=>fetch(base+'/api/tenant-assignment',{method:'PATCH',headers:{cookie:managerCookie,'Content-Type':'application/json'},body:JSON.stringify({email:email('tenant'),unitId,expectedVersion:1})})));
+  assert.deepEqual(assignmentRace.map(response=>response.status).sort(),[200,409]);
+  const beforeRace=await db.user.findUnique({where:{id:tenant.id}});
+  const [duringTicket,duringAssignment]=await Promise.all([
+    api('/api/tickets',tenantCookie,'POST',sampleBody,201),
+    api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('tenant'),unitId:ownUnit3.id,expectedVersion:beforeRace.occupancyVersion}),
+  ]);
+  assert.equal(duringAssignment.res.status,200);
+  assert.ok([beforeRace.unitId,ownUnit3.id].includes(duringTicket.body.unitId));assert.equal(duringTicket.body.propertyId,duringTicket.body.unitId===ownUnit3.id?ownProperty2.id:property.id);
+  assert.equal((await db.ticket.findUnique({where:{id:ticket.id}})).unitId,unit.id);
+  const unitRace=await Promise.all([1,2].map(()=>fetch(base+'/api/properties/'+property.id+'/units',{method:'POST',headers:{cookie:managerCookie,'Content-Type':'application/json'},body:JSON.stringify({identifier:'Concurrent unit'})})));
+  assert.deepEqual(unitRace.map(response=>response.status).sort(),[201,409]);
+  // The composite FK rejects a valid unit paired with another property's ID.
+  await assert.rejects(db.ticket.create({data:{...sampleBody,tenantId:tenant.id,unitId:unit.id,propertyId:property2.id}}),error=>error.code==='P2003');
+  await assert.rejects(db.ticket.create({data:{...sampleBody,tenantId:tenant.id,unitId:unit.id}}),error=>error.message.includes('Ticket_unit_requires_property'));
+  await assert.rejects(db.user.update({where:{id:tech.id},data:{unitId:unit.id}}),error=>error.message.includes('User_occupancy_tenant_only'));
+  console.log('PASS: manager ticket/metric/attachment/notification isolation, concurrent occupancy/unit creation and ticket location integrity');
   const failNotifications={create:async(userId,message,tx)=>{await tx.notification.create({data:{userId,message}});throw new Error('Integration notification fault');},createForAdmins:async(message,tx)=>{await tx.notification.create({data:{userId:manager.id,message}});throw new Error('Integration notification fault');}};
   const service=load('src/lib/services/TicketService.ts',{'../prisma':{prisma:db},'./prisma':{prisma:db},'./NotificationService':{NotificationService:failNotifications}}).TicketService;
   const counts=async()=>Promise.all([db.ticket.count(),db.activityLog.count(),db.notification.count()]);
@@ -123,6 +203,11 @@ async function main() {
   await api('/api/upload',otherCookie,'DELETE',{imageUrls:abandoned},400);await api('/api/upload',tenantCookie,'DELETE',{imageUrls:abandoned});assert.equal(fs.existsSync(path.join(process.cwd(),'storage/uploads',abandoned[0].split('/').pop())),false);
   assert.equal((await fetch(base+upload[0],{headers:{cookie:tenantCookie}})).status,404);
   console.log('PASS: failed creation cleans only owned unlinked uploads; arbitrary external/private references denied');
+  const latestOccupant=await db.user.findUnique({where:{id:tenant.id}});
+  await api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('tenant'),unitId:null,expectedVersion:latestOccupant.occupancyVersion});
+  assert.equal((await api('/api/occupancy',tenantCookie)).body.unit,null);
+  assert.equal((await api('/api/tickets/'+ticket.id,managerCookie)).body.unit.id,unit.id);
+  await api('/api/tickets',tenantCookie,'POST',sampleBody,409);
   const logout=(await api('/api/auth/logout',tenantCookie,'POST')).res.headers.get('set-cookie');assert.match(logout,/Max-Age=0/i);assert.match(logout,/HttpOnly/i);await api('/api/tickets','','GET',undefined,401);
   console.log('PASS: logout session-cookie expiry');
   console.log('ALL LIVE INTEGRATION CHECKS PASSED. Fixtures retained in isolated local development database.');

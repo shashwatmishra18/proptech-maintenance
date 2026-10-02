@@ -13,6 +13,8 @@ export const TicketService = {
             where.tenantId = user.userId;
         } else if (user.role === 'TECHNICIAN') {
             where.assignedToId = user.userId;
+        } else if (user.role === 'MANAGER') {
+            where.property = { managerId: user.userId };
         } else if (user.role !== 'MANAGER') {
             // Fail-safe block: unknown role blocked from fetching everything
             return [];
@@ -30,6 +32,8 @@ export const TicketService = {
                 priority: true,
                 createdAt: true,
                 updatedAt: true,
+                property: { select: { id: true, name: true, address: true } },
+                unit: { select: { id: true, identifier: true } },
                 images: { select: { id: true, imageUrl: true } },
                 tenant: {
                     select: isTech
@@ -49,8 +53,10 @@ export const TicketService = {
         }
         try {
             return await prisma.$transaction(async db => {
+                await lockUploader(db, data.tenantId);
+                const tenant = await db.user.findUnique({ where: { id: data.tenantId }, include: { unit: { include: { property: true } } } });
+                if (!tenant || tenant.role !== 'TENANT' || !tenant.unit) throw new AppError('Your manager must assign you to a unit before you can submit a maintenance request.', 409);
                 if (imageUrls.length > 0) {
-                    await lockUploader(db, data.tenantId);
                     await validateOwnedUploads(imageUrls, data.tenantId);
                     if (await db.ticketImage.findFirst({ where: { imageUrl: { in: imageUrls } }, select: { id: true } })) {
                         throw new AppError('An attachment is already linked to a ticket', 409);
@@ -58,10 +64,12 @@ export const TicketService = {
                 }
                 const ticket = await db.ticket.create({ data: {
                     ...data,
+                    propertyId: tenant.unit.propertyId,
+                    unitId: tenant.unit.id,
                     images: { create: imageUrls.map(imageUrl => ({ imageUrl })) },
                     activityLogs: { create: { userId: data.tenantId, action: 'Ticket created' } },
                 } });
-                await NotificationService.createForAdmins('New ticket created: ' + ticket.title, db);
+                await NotificationService.create(tenant.unit.property.managerId, 'New ticket at ' + tenant.unit.property.name + ' / ' + tenant.unit.identifier + ': ' + ticket.title, db);
                 return ticket;
             });
         } catch (error) {
@@ -73,8 +81,9 @@ export const TicketService = {
 
     assign: async (ticketId: string, technicianId: string, managerId: string) => {
         return prisma.$transaction(async db => {
-            const ticket = await db.ticket.findUnique({ where: { id: ticketId } });
+            const ticket = await db.ticket.findUnique({ where: { id: ticketId }, include: { property: true } });
             if (!ticket) throw new AppError('Ticket not found', 404);
+            if (ticket.property?.managerId !== managerId) throw new AppError('Ticket not found', 404);
             if (ticket.status !== 'OPEN' || ticket.assignedToId) {
                 throw new AppError('This ticket is no longer open and unassigned. Refresh and try again.', 409);
             }
@@ -94,7 +103,7 @@ export const TicketService = {
 
     updateStatus: async (ticketId: string, newStatus: Status, technicianId: string) => {
         return prisma.$transaction(async db => {
-            const ticket = await db.ticket.findUnique({ where: { id: ticketId } });
+            const ticket = await db.ticket.findUnique({ where: { id: ticketId }, include: { property: true } });
             if (!ticket) throw new AppError('Ticket not found', 404);
             if (ticket.assignedToId !== technicianId) throw new AppError('You are not assigned to this ticket', 403);
             const previous = newStatus === 'IN_PROGRESS' ? 'ASSIGNED' : newStatus === 'DONE' ? 'IN_PROGRESS' : null;
@@ -112,7 +121,7 @@ export const TicketService = {
                 ticketId, userId: technicianId, action: 'Status changed from ' + previous + ' to ' + newStatus,
             } });
             await NotificationService.create(ticket.tenantId, 'Your ticket status changed to ' + newStatus, db);
-            if (newStatus === 'DONE') await NotificationService.createForAdmins('Ticket #' + ticketId + ' marked as DONE.', db);
+            if (newStatus === 'DONE' && ticket.property) await NotificationService.create(ticket.property.managerId, 'Ticket #' + ticketId + ' at ' + ticket.property.name + ' marked as DONE.', db);
             return db.ticket.findUniqueOrThrow({ where: { id: ticketId } });
         });
     },

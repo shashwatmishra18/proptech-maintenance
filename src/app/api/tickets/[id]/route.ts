@@ -15,6 +15,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         const ticket = await prisma.ticket.findUnique({
             where: { id: id },
             include: {
+                property: { select: { id: true, name: true, address: true, managerId: true } },
+                unit: { select: { id: true, identifier: true } },
                 tenant: {
                     select: isTech
                         ? { id: true, name: true }
@@ -33,9 +35,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
         // Validation
         if (!authorizeTicketAccess(ticket, payload)) {
-            return errorResponse('Forbidden', 403);
+            return errorResponse(payload.role === 'MANAGER' ? 'Ticket not found' : 'Forbidden', payload.role === 'MANAGER' ? 404 : 403);
         }
-        // MANAGER can view all
 
         return successResponse({ ...ticket, images: ticket.images.map(image => ({ ...image, imageUrl: attachmentUrl(image.id) })) });
     } catch {

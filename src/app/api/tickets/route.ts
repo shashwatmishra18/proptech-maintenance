@@ -11,6 +11,8 @@ const createTicketSchema = z.object({
     priority: z.enum(Priority).optional().default('MEDIUM'),
     status: z.any().optional(),
     assignedToId: z.any().optional(),
+    propertyId: z.never().optional(),
+    unitId: z.never().optional(),
     imageUrls: z.array(z.string().startsWith('/api/attachments/files/')).max(5).default([]),
 });
 

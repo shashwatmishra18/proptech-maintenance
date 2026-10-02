@@ -105,7 +105,7 @@ test('Phase 1 registration, sessions, directory and attachment boundaries', asyn
     const legacyFile = fs.readdirSync('public/uploads').find(name => name.endsWith('.jpg'));
     let reads = 0;
     database.ticketImage = { findUnique: async ({ where }) => where.id === 'missing' ? null : {
-        id: where.id, imageUrl: '/uploads/' + legacyFile, ticket: { tenantId, assignedToId: techId },
+        id: where.id, imageUrl: '/uploads/' + legacyFile, ticket: { tenantId, assignedToId: techId, property: { managerId } },
     } };
     const attachments = load('src/lib/attachments.ts');
     overrides['@/lib/attachments'] = { ...attachments, readAttachment: async (url) => { reads++; return attachments.readAttachment(url); } };

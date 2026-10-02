@@ -31,6 +31,15 @@ async function main() {
     const login = await api('/api/auth/login', '', 'POST', { email, password });
     const cookieHeader = login.response.headers.get('set-cookie'); assert.match(cookieHeader, /HttpOnly/); assert.match(cookieHeader, /Secure/);
     const cookie = cookieHeader.split(';')[0];
+    // Create only new local QA fixtures; public registration remains tenant-only.
+    const BootstrapClient = require('@prisma/client').PrismaClient;
+    const bootstrap = new BootstrapClient({ datasources: { db: { url: url.toString() } } });
+    try {
+        const manager = await bootstrap.user.create({ data: { name: 'Container manager', email: 'manager.' + email, password: await require('bcrypt').hash(password, 10), role: 'MANAGER' } });
+        const property = await bootstrap.property.create({ data: { name: 'Container property', address: '10 QA Street', managerId: manager.id } });
+        const unit = await bootstrap.unit.create({ data: { identifier: '4B', propertyId: property.id } });
+        await bootstrap.user.update({ where: { email }, data: { unitId: unit.id, occupancyVersion: { increment: 1 } } });
+    } finally { await bootstrap.$disconnect(); }
     const form = new FormData(); form.append('file', new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=','base64')], { type: 'image/png' }), 'qa.png');
     const uploads = (await api('/api/upload', cookie, 'POST', form)).data.imageUrls;
     const ticket = (await api('/api/tickets', cookie, 'POST', { title: 'Container storage verification', description: 'Verify protected persistent storage in the production image.', priority: 'HIGH', imageUrls: uploads }, 201)).data;

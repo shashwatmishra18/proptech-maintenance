@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const image = await prisma.ticketImage.findUnique({
         where: { id: id },
-        include: { ticket: { select: { tenantId: true, assignedToId: true } } },
+        include: { ticket: { select: { tenantId: true, assignedToId: true, property: { select: { managerId: true } } } } },
     });
     if (!image || !authorizeTicketAccess(image.ticket, session)) return errorResponse('Attachment not found', 404);
     try {

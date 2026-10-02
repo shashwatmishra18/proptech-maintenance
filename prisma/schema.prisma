@@ -34,12 +34,17 @@ model User {
   password  String
   role      Role
   createdAt DateTime @default(now())
+  unitId String?
+  unit Unit? @relation("Occupants", fields: [unitId], references: [id], onDelete: Restrict)
+  occupancyVersion Int @default(0)
+  properties Property[]
 
   ticketsAsTenant Ticket[] @relation("TenantTickets")
   ticketsAssigned Ticket[] @relation("AssignedTickets")
 
   activityLogs  ActivityLog[]
   notifications Notification[]
+  @@index([unitId])
 }
 
 model Ticket {
@@ -48,6 +53,10 @@ model Ticket {
   description String
   status      Status   @default(OPEN)
   priority    Priority @default(MEDIUM)
+  propertyId String?
+  property Property? @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  unitId String?
+  unit Unit? @relation(fields: [unitId, propertyId], references: [id, propertyId], onDelete: Restrict)
   
   tenantId    String
   tenant      User     @relation("TenantTickets", fields: [tenantId], references: [id])
@@ -60,6 +69,36 @@ model Ticket {
 
   images       TicketImage[]
   activityLogs ActivityLog[]
+  @@index([propertyId])
+}
+
+model Property {
+  id String @id @default(uuid())
+  name String
+  address String
+  description String?
+  managerId String
+  manager User @relation(fields: [managerId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  units Unit[]
+  tickets Ticket[]
+  @@index([managerId])
+}
+
+model Unit {
+  id String @id @default(uuid())
+  identifier String
+  floor String?
+  description String?
+  propertyId String
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenants User[] @relation("Occupants")
+  tickets Ticket[]
+  @@unique([propertyId, identifier])
+  @@unique([id, propertyId])
 }
 
 model TicketImage {

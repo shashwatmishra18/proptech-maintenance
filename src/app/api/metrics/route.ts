@@ -9,12 +9,13 @@ export async function GET(req: NextRequest) {
         if (payload instanceof Response) return payload;
 
         if (payload.role === 'MANAGER') {
+            const scope = { property: { managerId: payload.userId } };
             const [total, open, inProgress, done, highPriority] = await Promise.all([
-                prisma.ticket.count(),
-                prisma.ticket.count({ where: { status: 'OPEN' } }),
-                prisma.ticket.count({ where: { status: 'IN_PROGRESS' } }),
-                prisma.ticket.count({ where: { status: 'DONE' } }),
-                prisma.ticket.count({ where: { priority: 'HIGH' } }), // we also have URGENT but sticking to high for this metric
+                prisma.ticket.count({ where: scope }),
+                prisma.ticket.count({ where: { ...scope, status: 'OPEN' } }),
+                prisma.ticket.count({ where: { ...scope, status: 'IN_PROGRESS' } }),
+                prisma.ticket.count({ where: { ...scope, status: 'DONE' } }),
+                prisma.ticket.count({ where: { ...scope, priority: 'HIGH' } }),
             ]);
 
             return successResponse({ total, open, inProgress, done, highPriority });

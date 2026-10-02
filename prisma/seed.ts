@@ -4,6 +4,10 @@ import bcrypt from 'bcrypt'
 const prisma = new PrismaClient()
 
 async function main() {
+    // Never partially clear a populated property portfolio through this legacy demo tool.
+    if (await prisma.property.count() > 0 || await prisma.unit.count() > 0) {
+        throw new Error('Demo seed refuses a database containing properties or units. Use a separate disposable empty database.');
+    }
     const hashedPassword = await bcrypt.hash('password123', 10)
 
     console.log('Clearing database...')
@@ -23,6 +27,9 @@ async function main() {
     const tech = await prisma.user.create({
         data: { name: 'Demo Tech', email: 'tech@test.com', password: hashedPassword, role: 'TECHNICIAN' }
     })
+    const property = await prisma.property.create({ data: { name: 'Demo Court', address: '10 Demo Street', managerId: manager.id } })
+    const unit = await prisma.unit.create({ data: { identifier: '4B', propertyId: property.id } })
+    await prisma.user.update({ where: { id: tenant.id }, data: { unitId: unit.id, occupancyVersion: 1 } })
 
     console.log('Seeding demo tickets...')
 
@@ -34,6 +41,8 @@ async function main() {
             status: 'OPEN',
             priority: 'MEDIUM',
             tenantId: tenant.id,
+            propertyId: property.id,
+            unitId: unit.id,
             activityLogs: {
                 create: { userId: tenant.id, action: 'Ticket created' }
             }
@@ -48,6 +57,8 @@ async function main() {
             status: 'ASSIGNED',
             priority: 'HIGH',
             tenantId: tenant.id,
+            propertyId: property.id,
+            unitId: unit.id,
             assignedToId: tech.id,
             activityLogs: {
                 create: [
@@ -66,6 +77,8 @@ async function main() {
             status: 'DONE',
             priority: 'LOW',
             tenantId: tenant.id,
+            propertyId: property.id,
+            unitId: unit.id,
             assignedToId: tech.id,
             activityLogs: {
                 create: [

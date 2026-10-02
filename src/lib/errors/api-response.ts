@@ -32,6 +32,7 @@ export class AppError extends Error {
 }
 
 export function handleApiError(error: unknown) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') return errorResponse('This identifier already exists in this property', 409);
     if (error instanceof AppError) return errorResponse(error.message, error.statusCode);
     if (error instanceof SyntaxError) return errorResponse('Invalid JSON body', 400);
     if (error instanceof z.ZodError) return errorResponse(error.issues[0]?.message ?? 'Invalid input', 400);

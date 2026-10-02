@@ -5,6 +5,8 @@ export interface UserSummary {
 }
 
 export interface TicketSummary {
+    property?: { id: string; name: string; address: string } | null;
+    unit?: { id: string; identifier: string } | null;
     id: string;
     title: string;
     description: string;

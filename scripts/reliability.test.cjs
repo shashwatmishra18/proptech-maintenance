@@ -33,7 +33,7 @@ function request(body, method = 'POST', url = '/api/test') {
 
 function fixture(status = 'OPEN', options = {}) {
     let state = {
-        ticket: { id: ids.ticket, title: 'Original', description: 'Description', priority: 'MEDIUM', status, tenantId: ids.tenant, assignedToId: status === 'OPEN' ? null : ids.tech },
+        ticket: { id: ids.ticket, title: 'Original', description: 'Description', priority: 'MEDIUM', status, tenantId: ids.tenant, assignedToId: status === 'OPEN' ? null : ids.tech, property: { managerId: ids.manager, name: 'Test property' } },
         logs: [], notifications: [], images: options.images || [],
     };
     const events = [];
@@ -43,7 +43,7 @@ function fixture(status = 'OPEN', options = {}) {
             const draft = structuredClone(state);
             const tx = {
                 user: {
-                    findUnique: async () => ({ id: ids.tech, role: 'TECHNICIAN', name: 'Tech & Co' }),
+                    findUnique: async ({ where }) => where.id === ids.tenant ? { id: ids.tenant, role: 'TENANT', unit: { id: 'unit', propertyId: 'property', identifier: '4B', property: { managerId: ids.manager, name: 'Test property' } } } : { id: ids.tech, role: 'TECHNICIAN', name: 'Tech & Co' },
                     findMany: async () => [{ id: ids.manager }],
                 },
                 ticket: {
@@ -233,7 +233,7 @@ test('mutation guard rejects same-tick duplicates and resets after network failu
 
 test('two requests reading the same state allow only one conditional assignment/status write', async () => {
     for (const operation of ['assign', 'status']) {
-        const initial = { id: ids.ticket, status: operation === 'assign' ? 'OPEN' : 'ASSIGNED', assignedToId: operation === 'assign' ? null : ids.tech, tenantId: ids.tenant };
+        const initial = { id: ids.ticket, status: operation === 'assign' ? 'OPEN' : 'ASSIGNED', assignedToId: operation === 'assign' ? null : ids.tech, tenantId: ids.tenant, property: { managerId: ids.manager, name: 'Test property' } };
         let current = { ...initial }; let arrivals = 0; let release;
         const barrier = new Promise(resolve => { release = resolve; });
         const logs = []; const notifications = [];

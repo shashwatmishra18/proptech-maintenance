@@ -30,8 +30,8 @@ export async function requireRole(req: NextRequest, roles: Role[]) {
     return payload;
 }
 
-export function authorizeTicketAccess(ticket: { tenantId: string; assignedToId: string | null }, user: SessionPayload): boolean {
-    if (user.role === 'MANAGER') return true;
+export function authorizeTicketAccess(ticket: { tenantId: string; assignedToId: string | null; property?: { managerId: string } | null }, user: SessionPayload): boolean {
+    if (user.role === 'MANAGER') return ticket.property?.managerId === user.userId;
     if (user.role === 'TENANT' && ticket.tenantId === user.userId) return true;
     if (user.role === 'TECHNICIAN' && ticket.assignedToId === user.userId) return true;
     return false;
