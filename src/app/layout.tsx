@@ -19,8 +19,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={font.className + " bg-slate-50 text-slate-900"}>
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-white focus:p-4 focus:underline">Skip to content</a>
         <Navbar />
-        <main className="min-h-screen px-4 py-8 md:px-8 max-w-7xl mx-auto">
+        <main id="main-content" tabIndex={-1} className="min-h-screen px-4 py-6 md:py-8 md:px-8 max-w-7xl mx-auto">
           {children}
         </main>
         <Toaster />

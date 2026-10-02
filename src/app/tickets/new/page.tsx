@@ -24,8 +24,10 @@ export default function NewTicket() {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
             const selectedFiles = Array.from(e.target.files);
-            if (selectedFiles.length > 5) {
-                toast({ title: 'Max 5 images allowed', variant: 'destructive' });
+            if (selectedFiles.length > 5 || selectedFiles.some(file => file.size > 5 * 1024 * 1024)) {
+                e.target.value = '';
+                setFiles([]);
+                toast({ title: 'Select up to 5 images, 5 MB each', variant: 'destructive' });
                 return;
             }
             setFiles(selectedFiles);
@@ -74,21 +76,21 @@ export default function NewTicket() {
 
             <Card>
                 <CardContent className="pt-6">
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form aria-busy={uploading} onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
-                            <Label>Title</Label>
-                            <Input value={title} onChange={e => setTitle(e.target.value)} required minLength={5} placeholder="e.g. Broken AC in Unit 4B" />
+                            <Label htmlFor="issue-title">Title</Label>
+                            <Input id="issue-title" maxLength={100} value={title} onChange={e => setTitle(e.target.value)} required minLength={5} placeholder="e.g. Broken AC in Unit 4B" />
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Description</Label>
-                            <Textarea value={description} onChange={e => setDescription(e.target.value)} required minLength={10} placeholder="Please provide details about the issue..." className="min-h-[120px]" />
+                            <Label htmlFor="issue-description">Description</Label>
+                            <Textarea id="issue-description" maxLength={2000} value={description} onChange={e => setDescription(e.target.value)} required minLength={10} placeholder="Please provide details about the issue..." className="min-h-[120px]" />
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Priority</Label>
+                            <Label htmlFor="issue-priority">Priority</Label>
                             <Select value={priority} onValueChange={setPriority}>
-                                <SelectTrigger>
+                                <SelectTrigger id="issue-priority">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -101,9 +103,9 @@ export default function NewTicket() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Images (Max 5, JPG/PNG)</Label>
-                            <Input type="file" multiple accept="image/jpeg, image/png" onChange={handleFileChange} />
-                            <p className="text-sm text-slate-500">{files.length} file(s) selected.</p>
+                            <Label htmlFor="issue-images">Images (Max 5, JPG/PNG)</Label>
+                            <Input id="issue-images" aria-describedby="upload-help" type="file" multiple accept="image/jpeg, image/png" onChange={handleFileChange} />
+                            <p id="upload-help" className="text-sm text-slate-600">Up to 5 JPG/PNG images, 5 MB each. {files.length} selected.</p>
                         </div>
 
                         <Button type="submit" disabled={uploading} className="w-full">

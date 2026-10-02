@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardContent, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -34,21 +34,21 @@ export default function Login() {
         <div className="flex justify-center items-center min-h-[80vh]">
             <Card className="w-full max-w-sm">
                 <CardHeader>
-                    <CardTitle className="text-2xl">Login</CardTitle>
+                    <h1 className="text-2xl font-semibold">Login</h1>
                     <CardDescription>Enter your credentials to access your account</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <form onSubmit={handleLogin} className="space-y-4">
+                    <form aria-busy={pending} onSubmit={handleLogin} className="space-y-4">
                         <div className="space-y-2">
-                            <Label>Email</Label>
-                            <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+                            <Label htmlFor="login-email">Email</Label>
+                            <Input type="email" id="login-email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required />
                         </div>
                         <div className="space-y-2">
-                            <Label>Password</Label>
-                            <Input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+                            <Label htmlFor="login-password">Password</Label>
+                            <Input type="password" id="login-password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
                         </div>
-                        <Button type="submit" disabled={pending} className="w-full">Sign In</Button>
-                    </form>
+                        <Button type="submit" disabled={pending} className="w-full">{pending ? "Signing in…" : "Sign in"}</Button>
+                    </form><p className="mt-5 text-sm text-slate-600">New tenant? <a className="text-blue-700 underline" href="/register">Create an account</a></p>
                 </CardContent>
             </Card>
         </div>

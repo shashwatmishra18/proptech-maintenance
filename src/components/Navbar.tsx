@@ -12,25 +12,21 @@ export async function Navbar() {
     if (session?.role === 'TECHNICIAN') dashboardPath = '/tech/dashboard';
 
     return (
-        <nav className="border-b bg-white shadow-sm px-6 py-4 flex items-center justify-between">
+        <nav aria-label="Main navigation" className="border-b bg-white shadow-sm px-4 sm:px-6 py-3 flex flex-wrap gap-3 items-center justify-between">
             <Link href={session ? dashboardPath : '/'} className="text-xl font-bold tracking-tight text-blue-600">
                 PropManage
             </Link>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-2 sm:gap-4">
                 {session ? (
                     <>
                         <NotificationBell />
-                        <div className="text-sm font-medium mr-4">Role: {session.role}</div>
+                        <span className="hidden sm:inline text-sm text-slate-600 capitalize">{session.role.toLowerCase()}</span>
                         <LogoutButton />
                     </>
                 ) : (
                     <>
-                        <Link href="/login">
-                            <Button variant="outline" size="sm">Login</Button>
-                        </Link>
-                        <Link href="/register">
-                            <Button size="sm">Register</Button>
-                        </Link>
+                        <Button asChild variant="outline" size="sm"><Link href="/login">Sign in</Link></Button>
+                        <Button asChild size="sm"><Link href="/register">Register</Link></Button>
                     </>
                 )}
             </div>
