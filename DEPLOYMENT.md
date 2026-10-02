@@ -1,205 +1,167 @@
-# Production deployment and recovery
+# Railway production deployment
 
-## Architecture and boundaries
+Deploy one Docker application service from `main`, one Railway PostgreSQL service,
+and one private application volume. Railway terminates public HTTPS; a Node gateway
+inside the application image retains headers, body limits and rate protection,
+forwarding to Next.js on loopback. No separate Nginx, worker, Redis or S3 service is
+needed. The portable deployment remains in [DEPLOYMENT-DOCKER.md](DEPLOYMENT-DOCKER.md).
+See [RAILWAY-VERIFICATION.md](RAILWAY-VERIFICATION.md) for actual verification status.
+Never seed/reset production or run the local integration scripts against it.
 
-Use one Linux Docker host with Nginx terminating HTTPS, a non-root Next.js
-standalone container, managed PostgreSQL, a private persistent upload volume,
-and Resend. `compose.production.yml` is separate from the local database Compose
-configuration. No production database container, fixture data or seed is started.
-This is intentionally a small-scale, single application instance deployment.
-Ephemeral/serverless hosts are unsuitable without a shared private storage adapter.
-Object storage is not implemented or claimed verified; persistent private storage
-is the selected supported production alternative.
+## Exact dashboard checklist
 
-The upload adapter uses `UPLOAD_ROOT` in production and `storage/uploads` locally.
-Legacy attachments remain in a separately mounted read-only `public/uploads`.
-Random UUID filenames, ownership locks, signature/type checks, five images at
-5 MiB each, and authenticated download authorization are preserved. Neither
-directory is served by Nginx. Downloads are proxied through authorized application
-responses with private/no-store caching. Preserve both directories when migrating
-hosts: explicitly copy, compare checksums and retain the source. Never copy or
-delete attachments automatically during startup. No vendor credentials or public
-object URLs are needed.
+1. Sign in to Railway with GitHub access to `shashwatmishra18/proptech-maintenance`.
+   Inspect the intended project first and reuse existing services/volumes. If new,
+   deploy this GitHub repository, branch `main`, naming the service `app`. Hold
+   automatic deployment until configuration is complete.
+2. Add/select the SSL-enabled PostgreSQL service, called `Postgres` below. Keep
+   database access private; do not expose its database port publicly.
+3. Attach one private volume to `app` at **`/app/storage`**. Set **one instance**;
+   disable sleep/serverless behavior for a reliable demonstration.
+4. Obtain only the PostgreSQL public CA through authenticated Railway SSH:
 
-## Provisioning and secrets
+   ```sh
+   railway ssh --service Postgres -- openssl x509 -in /var/lib/postgresql/data/certs/root.crt -outform PEM
+   ```
 
-1. Provision a Linux host with Docker Compose, enough disk for uploads/backups,
-   and at least 2 GiB RAM (build elsewhere if necessary). Restrict SSH; expose
-   only 80/443. Create DNS for the public hostname. Install a valid TLS certificate
-   using the host's ACME client with automated renewal and Nginx reload.
-2. Create an empty managed PostgreSQL database. Enable provider-required TLS,
-   backups and restricted network access. Use provider CA validation where
-   supported; never disable certificate validation. Runtime account needs normal
-   application CRUD; operator migration account needs schema privileges.
-3. Create a persistent Docker volume (not an anonymous ephemeral container disk),
-   ensure its root is writable by UID/GID 1001, and create/preserve the legacy
-   directory. Never use `docker compose down -v` or prune production volumes.
-4. Verify a sending domain in Resend and issue a least-privilege sending key.
-   Real delivery needs that key and a verified sender; tests use mocks and never
-   send mail to QA accounts. Provider acceptance is not proof of inbox delivery.
-5. Create a private, mode-0600 environment file **outside the checkout**:
+   Confirm the path for the selected database image. The [SSL template](https://github.com/railwayapp-templates/postgres-ssl/blob/main/init-ssl.sh)
+   stores its CA there and signs the private hostname. Never export private keys.
+   If the database rotates its CA, update `DATABASE_CA_CERT` before redeployment;
+   do not disable certificate verification to resolve errors.
+5. Configure these application variables, adjusting the database service name:
 
-```dotenv
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require&sslaccept=strict&connection_limit=5&pool_timeout=10
-JWT_SECRET=YOUR_CRYPTOGRAPHIC_RANDOM_48_BYTE_HEX_VALUE
-APP_ORIGIN=https://your-public-domain.example
-EMAIL_PROVIDER=resend
-EMAIL_FROM=Maintenance <support@your-verified-domain.example>
-RESEND_API_KEY=YOUR_PRIVATE_SENDING_KEY
-STORAGE_BACKEND=persistent
-UPLOAD_ROOT=/app/storage/uploads
-DEV_CREDENTIAL_LINKS=0
-```
+   | Variable | Exact value / source |
+   | --- | --- |
+   | `NODE_ENV` | `production`, also image default |
+   | `DEPLOYMENT_PLATFORM` | `railway` |
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` service reference |
+   | `DATABASE_CA_CERT` | Manually supplied public PEM from step 4 |
+   | `JWT_SECRET` | Manual cryptographically random secret, at least 32 characters; retain across deployments |
+   | `APP_ORIGIN` | Exact generated `https://…up.railway.app` origin, without path/trailing slash |
+   | `EMAIL_PROVIDER` | `disabled` until Resend is configured; then `resend` |
+   | `RESEND_API_KEY` | Manual server-side key, required for `resend` |
+   | `EMAIL_FROM` | Manual verified sender, required for `resend` |
+   | `STORAGE_BACKEND` | `persistent` |
+   | `UPLOAD_ROOT` | `/app/storage/uploads` |
+   | `LEGACY_UPLOAD_ROOT` | `/app/storage/legacy` |
+   | `DEV_CREDENTIAL_LINKS` | `0` |
+   | `RAILWAY_RUN_UID` | `0` for mount initialization; runtime drops to UID/GID 1001 |
+   | `PORT` | Railway supplied; do not override/hardcode |
+   | `RAILWAY_VOLUME_MOUNT_PATH` | Railway supplied from `/app/storage` volume |
 
-Generate JWT_SECRET with `openssl rand -hex 48`; keep it stable across releases.
-Rotate it deliberately to revoke all sessions. URL-encode database credentials.
-Prisma 5 requires `sslmode=require&sslaccept=strict`; its default certificate
-acceptance is permissive. For a provider-specific CA mount the CA read-only into
-both app and ops containers and append `sslcert=/ABSOLUTE/provider-ca.pem`.
-The supplied `compose.ca.yml` does this: set `DATABASE_CA_PATH` to the provider CA
-file, use `sslcert=/run/provider-ca.pem`, and include
-`-f compose.ca.yml` after `-f compose.production.yml` in every operator/app command.
-Do not use libpq-only `verify-full`/`sslrootcert` options with this Prisma version.
-Managed pooling: budget five connections per app replica plus operator headroom;
-use a provider-supported direct connection for migrations. For PgBouncer follow
-the provider's Prisma 5 connection instructions, including `pgbouncer=true` if
-required. Long-running containers use one Prisma client per process. No query
-or database engine error logging is enabled, because errors can contain private
-parameters. Generic operational events omit secrets and user content.
+   Generate a JWT secret privately, for example `openssl rand -hex 48`; never
+   commit it or log it. Missing database URL options are normalized to
+   `sslmode=require`, `sslaccept=strict`, `connection_limit=5`, `pool_timeout=10`.
+   Explicit insecure TLS settings fail. The public CA becomes a private temporary
+   PEM for Prisma, including during pre-deploy when there is no application volume.
+6. In application Settings configure:
 
-Set these Compose interpolation variables in a private shell/env file:
-`APP_IMAGE`, matching `OPS_IMAGE`, `PRODUCTION_ENV_FILE` (absolute file path),
-`UPLOAD_VOLUME` (existing volume name), `LEGACY_UPLOAD_PATH` (absolute directory),
-`TLS_CERT_PATH` (directory containing fullchain.pem and privkey.pem), and
-`PUBLIC_HOSTNAME` (exact domain matching APP_ORIGIN; no scheme or path).
-Container startup rejects incomplete production configuration, missing TLS in
-DATABASE_URL, non-HTTPS/non-root/loopback APP_ORIGIN, development token exposure,
-or an unwritable upload mount. Build requires no production secrets.
+   | Setting | Value |
+   | --- | --- |
+   | Builder | Dockerfile, repository root `/`, file `Dockerfile` |
+   | Start command | `node scripts/production-start.cjs`, also image CMD |
+   | Pre-deploy command | `node scripts/migrate-deploy.cjs` |
+   | Pre-deploy timeout | 300 seconds |
+   | Healthcheck path / timeout | `/api/health` / 120 seconds |
+   | Instance count | 1 |
+   | Restart policy | On failure, maximum 3 retries |
+   | Wait for CI | Enabled for GitHub automatic deployments |
 
-Provision a newly chosen volume explicitly before the first rollout:
+   Generate a public domain under Networking; set `APP_ORIGIN` before release.
+   Use dashboard settings: Railway currently [deprecates configuration-as-code](https://docs.railway.com/config-as-code/reference).
+7. Deploy. The explicit pre-deploy command applies committed migrations before
+   replacement traffic; nonzero exit blocks rollout. Its [separate container](https://docs.railway.com/deployments/pre-deploy-command)
+   has service variables/private networking, without the upload volume. The image
+   includes Prisma CLI/engines. Startup never migrates or seeds. Do not invoke a
+   second migration runner simultaneously.
+8. Require migration success, `railway_gateway_started` with `uid:1001`, and
+   HTTPS `/api/health` returning 200. Missing secrets, untrusted CA or unreachable
+   PostgreSQL must fail startup/readiness. Inspect root/login and static assets.
+9. Bootstrap the initial manager through private JSON standard input:
 
-```sh
-docker volume create "$UPLOAD_VOLUME"
-docker run --rm --user 0 -v "$UPLOAD_VOLUME:/data" --entrypoint chown \
-  "$APP_IMAGE" 1001:1001 /data
-```
+   ```sh
+   railway ssh --service app -- node scripts/bootstrap-manager.cjs --confirm-bootstrap < /PRIVATE/bootstrap.json
+   ```
 
-## Explicit release
+   JSON contains `name`, `email`, `password`, validated by the shared policy.
+   On Windows pipe `Get-Content -Raw -LiteralPath 'C:\PRIVATE\bootstrap.json'` to
+   the same SSH command. Restrict file permissions and remove the file securely
+   after onboarding. No password arguments/history/logs; an existing email fails
+   without overwriting any account. The compiled existing CLI is in the image.
+10. Enable automatic deployment from `main` with [Wait for CI](https://docs.railway.com/deployments/github-autodeploys).
+    Confirm the hosted workflow is green and perform public acceptance before
+    creating any release tag.
 
-Require a passing Verify release workflow for the exact commit before releasing.
-The manual Build explicit release images workflow publishes immutable commit tags
-to GHCR; configure the GitHub `release` environment with required reviewers. It
-does not deploy a host or consume production credentials. Alternatively:
+## Runtime, storage and security
 
-```sh
-docker build --target runner -t YOUR_REGISTRY/proptech:COMMIT .
-docker build --target ops -t YOUR_REGISTRY/proptech:ops-COMMIT .
-```
+Railway [mounts volumes as root](https://docs.railway.com/volumes). Startup checks
+fixed paths, prepares only `/app/storage`, `uploads`, `legacy`, then drops groups
+and UID/GID to 1001 before opening HTTP listeners. No existing files are copied,
+deleted or recursively changed. Review readability of an existing volume explicitly.
+Copy legacy files into `legacy` manually with checksum verification, retain the
+source, and back up both directories alongside PostgreSQL. Neither is public.
 
-Record the previous image, check backup/status, acquire an operator release lock
-(one release at a time), and use the matching ops image:
+The gateway listens on Railway's dynamic `PORT`; Next.js binds loopback only.
+It rejects foreign hosts/origins, public storage paths, JSON above 64 KiB, and
+upload bodies above 26 MiB. Existing limits remain five images, 5 MiB each. At
+most two upload requests are active. Credential routes share 30/minute per IP
+(burst 20); upload routes 10/minute (burst 10). Global budgets are 300/minute
+(burst 100) and 30/minute (burst 20). Rejections return 429 with `Retry-After`.
 
-```sh
-docker compose -f compose.production.yml --profile ops config --quiet
-docker compose -f compose.production.yml run --rm migrate
-# This runs npx prisma migrate deploy's equivalent installed Prisma CLI.
-# Stop here if migration fails; do not seed/reset/retry blindly.
-docker compose -f compose.production.yml up -d app
-docker compose -f compose.production.yml up -d edge
-curl --fail https://YOUR_DOMAIN/api/health
-```
+Client identity uses ingress `X-Real-IP` from Railway's [networking specification](https://docs.railway.com/networking/public-networking/specs-and-limits),
+not client `X-Forwarded-For`. Do not expose an additional unconfigured ingress or
+place an unconfigured CDN/proxy in front. Private project peers are trusted;
+global budgets still bound differing identities. Limits are process-local and
+reset on restart, making one instance essential.
 
-The five existing migrations remain in order: initial schema, nullable property
-foundation, CANCELLED enum/version, account credentials, notification references.
-They add schema/defaults/relations and preserve legacy rows; no migration drops
-or truncates records. PostgreSQL enum addition is not used in the same migration.
-Indexes may lock briefly: release during low traffic and inspect provider limits.
-For a source checkout, the explicit equivalent is `npx prisma migrate deploy`.
-Never run `migrate dev`, `db push`, `migrate reset` or the demo seed in production.
+CSP, HSTS, frame denial, nosniff, no-referrer and restricted permissions apply to
+pages, assets, errors and health. API/authenticated responses are private/no-store.
+Application authorization still protects attachment downloads. Existing JWT
+account versions, role/property isolation, credential token hashing, transaction
+rollback and stale-update handling remain unchanged.
 
-Bootstrap the first manager once using the ops image and secure standard input:
+## Email and public acceptance
 
-```sh
-# Supply JSON {"name":"...","email":"...","password":"..."} from a private
-# password-manager-generated input file or pipe; never place a real password
-# in shell history or command-line arguments. Remove the temporary input safely.
-docker compose -f compose.production.yml run --rm -T migrate \
-  node node_modules/ts-node/dist/bin.js --project tsconfig.seed.json \
-  prisma/bootstrap-manager.ts --confirm-bootstrap < /PRIVATE/bootstrap.json
-```
+For email enable `resend`, a valid server key and verified `EMAIL_FROM`. Links
+use HTTPS `APP_ORIGIN`. Confirm real inbox delivery and single-use acceptance/
+reset before claiming email readiness. Explicit `disabled` allows deployment but
+cannot deliver onboarding/recovery email; generic responses never reveal raw
+links or development receipts. Never enable `DEV_CREDENTIAL_LINKS` in production.
 
-The CLI enforces the application's 10-character/72-byte policy, hashes with
-bcrypt, refuses existing email and never overwrites users. Public registration
-remains tenant-only. No production demo/sample data is automatically installed.
+Record public URL, deployed commit and results: tenant registration; secure
+login/logout; manager bootstrap; staff invitation; properties/units/occupancy;
+HIGH-priority ticket; assignment and OPEN → ASSIGNED → IN_PROGRESS → DONE; notes;
+notification ownership/read status; private upload/download and unauthorized
+access; password reset/old-session rejection; mobile navigation; HTTPS assets,
+headers, rate limits and readiness. Use approved acceptance accounts, without
+destructive automated production tests. Local tests do not prove this acceptance.
 
-## Edge security and operations
+## Backups, rollback and costs
 
-Nginx accepts direct public traffic and overwrites forwarded headers; do not place
-an unconfigured CDN/proxy in front (otherwise rate limits see its shared IP).
-Nginx accepts only PUBLIC_HOSTNAME and rejects other hosts. Cookies remain Secure, HttpOnly,
-SameSite=Lax. APP_ORIGIN creates HTTPS invitation/reset links; raw tokens stay
-in fragments, not request query strings. Keep provider dashboards/logs private.
+Configure PostgreSQL-volume and application-volume backups separately in each
+Backups tab. Enable daily/weekly schedules if available on the selected plan;
+take a manual backup before risky maintenance. Railway documents daily retention
+6 days, weekly 27 days, monthly 89 days and incremental storage billing; [check
+current availability/limits](https://docs.railway.com/volumes/backups) in the dashboard.
+Do not promise free backups or PITR.
 
-Credentials endpoints share 30 requests/minute/IP with a 20-request burst;
-uploads allow 10/minute/IP with a 10-request burst. Shared Nginx worker memory
-enforces limits, returns 429/Retry-After, and needs no per-app memory counter.
-JSON bodies have a 64 KiB edge limit; uploads have 26 MiB envelope limit with
-application signature/type/per-image/count checks. Existing ticket/search/note
-schemas bound individual text lengths. No public app port permits edge bypass.
-Adapt limits for shared NAT users if measured traffic requires it.
+Also retain encrypted, access-controlled off-platform PostgreSQL dumps and archives
+of `uploads` plus `legacy`. Export through authenticated service SSH using existing
+database environment/local database authentication; never expose a database port
+or put passwords in arguments. Verify binary exports and archive checksums.
+Restore into a separate recovery database/project/volume, check record counts,
+ticket downloads and permissions. Do not rehearse by overwriting production.
+Previous local backup/restore evidence is in [RELEASE-VERIFICATION.md](RELEASE-VERIFICATION.md).
 
-Headers include practical CSP (Next hydration requires unsafe-inline), nosniff,
-no-referrer, frame denial, permissions restrictions and one-year HSTS at TLS edge.
-Private APIs explicitly send no-store. Nginx has no filesystem root or cache.
-Errors/logs omit request URLs, bodies, cookies, tokens and IP addresses. Monitor
-HTTP 5xx, readiness, disk space and provider mail failures. Docker rotates logs.
-`/api/health` is public no-store readiness: SELECT 1 and signing-key validation,
-returning only ready/unavailable (503). Process reachability is separate from
-dependency readiness; do not restart indefinitely for a transient DB outage.
-Docker runs as UID 1001 and forwards SIGTERM to Node with 30 seconds grace.
+Rollback application code to its prior verified commit/image while retaining
+volumes. Migrations persist: review schema compatibility and prefer a forward fix
+rather than blindly reversing SQL. Railway [prohibits volume replicas and incurs
+brief redeploy downtime](https://docs.railway.com/volumes/reference); no zero-downtime
+claim is made. This design is intentionally for single-instance small-scale use.
 
-All account tokens, JWT version checks, notification state and concurrency locks
-are shared through PostgreSQL. Multiple replicas require a shared writable upload
-filesystem mounted at the same path and one shared rate-limiting edge. This Compose
-release supports one app replica; do not scale across hosts with local volumes.
-For multiple independent edges use provider-distributed limits, not isolated zones.
-
-## Backup, restore and rollback
-
-Enable daily managed DB backups with at least 14 days retention and PITR where
-available. Snapshot/back up private and legacy upload volumes daily to encrypted
-off-host storage with restricted credentials and 30-day retention. Back up before
-each release and coordinate DB/file snapshots; retain immutable images and config
-references. Confirm backups by restoring into a **new isolated database and new
-volume**, running migrate status and comparing row counts/files/checksums. Never
-restore over production as a drill. Review capacity/retention and access quarterly.
-
-Rollback app independently: set APP_IMAGE to the recorded previous immutable image,
-keep the existing upload volumes and run `up -d app`, then readiness/smoke checks.
-Do not blindly roll migrations backward. Check previous app/schema compatibility;
-forward-fix schema failures with a reviewed new migration. A full data restore is
-an explicit incident decision with downtime and data-loss assessment.
-
-## Acceptance and common failures
-
-After deployment verify health, tenant-only registration/login, manager property
-isolation, assigned-unit ticket upload, technician assignment/start/note/completion,
-notification links, credential email completion and protected attachment/logout.
-Use dedicated operator-approved QA users; no automatic destructive seed.
-
-503/startup failure: check secret presence, HTTPS origin, TLS DB URL and UID 1001
-mount permissions without printing secrets. Migration failure: inspect Prisma
-status privately and repair the cause before rollout. Upload failure: disk quota,
-mount permissions and signature/size limits. Mail unavailable: verified sender,
-provider key and origin; renew invitation safely after correcting delivery. 429:
-wait Retry-After; check shared-IP traffic before changing limits. Certificate
-renewal: test ACME renewal and reload edge. Static asset errors: ensure matching
-immutable image, never mix `.next` versions. Keep app port private.
-
-External host/domain/TLS, managed database, private volume and verified Resend
-credentials must be provisioned by the operator if unavailable locally. No live
-production URL or remote delivery/storage verification is implied by local QA.
-
-References: [Nginx request limiting](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html),
-[Docker production Compose](https://docs.docker.com/compose/how-tos/production/),
-[Prisma PostgreSQL TLS options](https://docs.prisma.io/docs/orm/core-concepts/supported-databases/postgresql).
+Monitor readiness, restarts, delivery failures, disk growth and backups. Two
+services consume CPU/RAM, two volumes storage, and backups/egress can incur charges.
+Check current [Railway plans](https://docs.railway.com/pricing/plans) and Resend
+allowances before launch. Durable PostgreSQL and private attachments cannot depend
+on an unlimited-free assumption. Shared storage/rate protection for future scaling
+is outside this release.

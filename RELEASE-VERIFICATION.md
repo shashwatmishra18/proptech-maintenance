@@ -2,6 +2,11 @@
 
 Verified locally on 2026-10-03; no production resources accessed or modified.
 
+This is the preserved Phase 10 portable Docker/Nginx evidence. Final Railway
+preparation and its separate verification boundary are recorded in
+[RAILWAY-VERIFICATION.md](RAILWAY-VERIFICATION.md); deployment instructions are
+in [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Results
 
 - Clean `npm ci --no-audit --no-fund`: 486 packages installed.

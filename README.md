@@ -290,3 +290,22 @@ erDiagram
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the supported private-volume deployment,
 explicit migrations/manager bootstrap, HTTPS edge, CI, backups and rollback.
 The development Compose file is not the public production deployment configuration.
+
+Railway is the primary deployment path: one Docker application service, one
+PostgreSQL service, and `/app/storage` as a private volume. Its dynamic `PORT`
+is served by the in-image Node gateway; Next.js binds loopback. The runtime
+retains headers/body/rate protections without a separate Nginx service and drops
+to UID 1001 after fixed-path volume initialization. Migrations run only through
+the explicit pre-deploy command, never application startup. Resend may be
+explicitly disabled until a key and verified sender are available, without
+exposing invitation/reset links. See [RAILWAY-VERIFICATION.md](RAILWAY-VERIFICATION.md)
+for deployment access and evidence, and [DEPLOYMENT-DOCKER.md](DEPLOYMENT-DOCKER.md)
+for the preserved portable Docker/Nginx alternative. Railway permits one instance
+with the volume; redeployments can briefly interrupt service.
+
+Run `node --test scripts/railway.test.cjs` for focused runtime/gateway checks.
+`scripts/railway-container-smoke.cjs` is an opt-in additive local test restricted
+to `proptech-railway-app`, localhost port 3108 and TLS PostgreSQL port 55433.
+It requires `RUN_LIVE_INTEGRATION=1`, `QA_CONTAINER_NAME=proptech-railway-app`, and
+`INTEGRATION_DATABASE_URL` for local `proptech_db` with strict TLS and the local
+QA certificate. Never use a production tunnel or production data for this test.
