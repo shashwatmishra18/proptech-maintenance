@@ -1,6 +1,7 @@
 'use client';
 
 import type { NotificationSummary } from '@/lib/types';
+import Link from 'next/link';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
@@ -39,8 +40,11 @@ export function NotificationBell() {
     useEffect(() => {
         fetchData();
         // In a real app we'd use WebSockets or SSE, for MVP we poll every 30s
-        const interval = setInterval(fetchData, 30000);
-        return () => clearInterval(interval);
+        const refresh = () => { if (!document.hidden) void fetchData(); };
+        const invalidate = () => { revision.current++; };
+        const interval = setInterval(refresh, 30000);
+        window.addEventListener('notifications-changed', refresh);
+        return () => { clearInterval(interval); window.removeEventListener('notifications-changed', refresh); invalidate(); };
     }, [fetchData]);
 
     const markAsRead = async () => {
@@ -85,19 +89,14 @@ export function NotificationBell() {
                     {loading ? <p role="status" className="p-4 text-sm text-slate-600">Loading notifications…</p> : notifications.length === 0 && !loadError ? (
                         <div className="p-4 text-center text-sm text-slate-500">No recent notifications</div>
                     ) : (
-                        notifications.map((n) => (
-                            <DropdownMenuItem key={n.id} className="p-4 focus:bg-slate-50 cursor-default border-b last:border-0 flex flex-col items-start gap-1">
-                                <span className={`text-sm break-words [overflow-wrap:anywhere] ${!n.read ? 'font-medium text-slate-900' : 'text-slate-600'}`}>
-                                    {n.message}
-                                </span>
-                                <span className="text-xs text-blue-700">{n.read ? 'Read' : 'Unread'}</span>
-                                <span className="text-xs text-slate-600">
-                                    {new Date(n.createdAt).toLocaleString()}
-                                </span>
-                            </DropdownMenuItem>
-                        ))
+                        notifications.map(n => {
+                            const content = <><span className={"text-sm break-words [overflow-wrap:anywhere] " + (!n.read ? 'font-medium text-slate-900' : 'text-slate-600')}>{n.message}</span><span className="text-xs text-blue-700">{n.read ? 'Read' : 'Unread'}</span><time className="text-xs text-slate-600" dateTime={n.createdAt}>{new Date(n.createdAt).toLocaleString()}</time>{n.ticketHref && <span className="text-sm font-medium text-blue-700">View ticket →</span>}</>;
+                            const style = 'p-4 focus:bg-slate-50 border-b last:border-0 flex flex-col items-start gap-1';
+                            return n.ticketHref ? <DropdownMenuItem key={n.id} asChild><Link href={n.ticketHref} className={style} onClick={() => setOpen(false)}>{content}</Link></DropdownMenuItem> : <DropdownMenuItem key={n.id} className={style}>{content}</DropdownMenuItem>;
+                        })
                     )}
                 </div>
+                <div className="border-t p-2"><DropdownMenuItem asChild><Link href="/notifications" className="flex min-h-11 items-center justify-center rounded-md text-sm font-semibold text-blue-700 hover:bg-blue-50" onClick={() => setOpen(false)}>View all notifications</Link></DropdownMenuItem></div>
             </DropdownMenuContent>
         </DropdownMenu>
     );

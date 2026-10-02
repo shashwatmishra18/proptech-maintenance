@@ -71,6 +71,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
     matcher: [
+        '/notifications/:path*',
         '/account/:path*',
         '/manager/:path*',
         '/tech/:path*',

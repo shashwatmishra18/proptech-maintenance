@@ -3,6 +3,7 @@ import { Button } from './ui/button';
 import { getSession } from '@/lib/auth';
 import { NotificationBell } from './NotificationBell';
 import { LogoutButton } from './LogoutButton';
+import { NavLink } from './NavLink';
 
 export async function Navbar() {
     const session = await getSession();
@@ -19,9 +20,10 @@ export async function Navbar() {
             <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                 {session ? (
                     <>
-                        {session.role === 'MANAGER' && <Link href="/manager/properties" className="text-sm text-blue-700 min-h-11 inline-flex items-center">Properties</Link>}
-                        <Link href="/account" className="text-sm text-blue-700 min-h-11 inline-flex items-center">Account</Link>
-                        {session.role === 'MANAGER' && <Link href="/manager/staff" className="text-sm text-blue-700 min-h-11 inline-flex items-center">Staff</Link>}
+                        <NavLink href={dashboardPath}>Dashboard</NavLink>
+                        {session.role === 'MANAGER' && <NavLink href="/manager/properties">Properties</NavLink>}
+                        {session.role === 'MANAGER' && <NavLink href="/manager/staff">Staff</NavLink>}
+                        <NavLink href="/account">Account</NavLink>
                         <NotificationBell />
                         <span className="hidden sm:inline text-sm text-slate-600 capitalize">{session.role.toLowerCase()}</span>
                         <LogoutButton />

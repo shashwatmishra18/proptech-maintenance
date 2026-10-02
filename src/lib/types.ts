@@ -32,8 +32,11 @@ export interface TicketDetail extends TicketSummary {
 }
 
 export interface NotificationSummary {
+    ticketHref?: string | null;
     id: string;
     message: string;
     read: boolean;
     createdAt: string;
 }
+
+export interface NotificationPage { notifications: NotificationSummary[]; unreadCount: number; total: number; page: number; pageSize: number; totalPages: number; snapshotAt: string }

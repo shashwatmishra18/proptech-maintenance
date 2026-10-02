@@ -11,7 +11,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 
 type Account = { id: string; name: string; email: string; role: string; active: boolean; authVersion: number };
-const style = 'rounded-lg border bg-white p-4 sm:p-6 space-y-4 min-w-0';
+const style = 'surface p-4 sm:p-6 space-y-4 min-w-0';
 function NewPasswordFields() { return <><div><Label htmlFor="new-password">New password</Label><Input id="new-password" name="password" type="password" autoComplete="new-password" required minLength={10} maxLength={72} /></div><div><Label htmlFor="confirm-password">Confirm password</Label><Input id="confirm-password" name="confirmation" type="password" autoComplete="new-password" required /></div><p className="text-sm text-slate-600">Use at least 10 characters and at most 72 UTF-8 bytes. No complexity rules; spaces are allowed, but a blank password is not.</p></>; }
 function values(form: HTMLFormElement) { return Object.fromEntries(new FormData(form)) as Record<string, string>; }
 function checkPassword(data: Record<string, string>) { if (data.password !== data.confirmation) throw Error('Passwords must match.'); if (!data.password.trim() || data.password.length < 10 || new TextEncoder().encode(data.password).length > 72) throw Error('Use at least 10 characters and at most 72 UTF-8 bytes.'); }

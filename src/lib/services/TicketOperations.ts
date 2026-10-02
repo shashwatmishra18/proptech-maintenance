@@ -45,7 +45,7 @@ export const TicketOperations = {
         await db.activityLog.create({ data: { ticketId: id, userId: actor.userId, action } });
         const message = action + ': ' + ticket.title + (ticket.property ? ' at ' + ticket.property.name : '');
         recipients.delete(actor.userId);
-        for (const recipient of recipients) await NotificationService.create(recipient, message, db);
+        for (const recipient of recipients) await NotificationService.create(recipient, message, db, ticket.id);
         return db.ticket.findUniqueOrThrow({ where: { id } });
     }),
 };

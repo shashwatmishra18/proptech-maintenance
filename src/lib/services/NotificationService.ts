@@ -2,11 +2,12 @@ import { prisma } from '../prisma';
 import type { Prisma } from '@prisma/client';
 
 export const NotificationService = {
-    create: async (userId: string, message: string, db: Prisma.TransactionClient = prisma) => {
+    create: async (userId: string, message: string, db: Prisma.TransactionClient = prisma, ticketId?: string) => {
         return db.notification.create({
             data: {
                 userId,
                 message,
+                ticketId,
             },
         });
     },

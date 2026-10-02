@@ -94,6 +94,7 @@ model AccountEvent {
 }
 
 model Ticket {
+  notifications Notification[]
   version Int @default(0)
   id          String   @id @default(uuid())
   title       String
@@ -166,10 +167,14 @@ model ActivityLog {
 }
 
 model Notification {
+  ticketId String?
+  ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   message   String
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+  @@index([userId, createdAt, id])
+  @@index([ticketId])
 }

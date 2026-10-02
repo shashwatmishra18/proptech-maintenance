@@ -16,7 +16,7 @@ export const statusInput = z.object({ active: z.boolean(), expectedVersion: z.nu
 export const accountSelect = { id: true, name: true, email: true, role: true, active: true, authVersion: true } as const;
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const unavailable = () => new AppError('This link is invalid, expired, or unavailable.', 400);
-const recoveryMessage = 'If the account is eligible, a recovery request has been recorded. Email delivery is not configured; contact your operator for help.';
+const recoveryMessage = 'If the account is eligible, a recovery request has been recorded. Check your email if delivery is available, or contact your operator for help.';
 
 export const AccountService = {
     profile: (id: string) => prisma.user.findUniqueOrThrow({ where: { id }, select: accountSelect }),

@@ -68,7 +68,7 @@ export const TicketService = {
                     images: { create: imageUrls.map(imageUrl => ({ imageUrl })) },
                     activityLogs: { create: { userId: data.tenantId, action: 'Ticket created' } },
                 } });
-                await NotificationService.create(tenant.unit.property.managerId, 'New ticket at ' + tenant.unit.property.name + ' / ' + tenant.unit.identifier + ': ' + ticket.title, db);
+                await NotificationService.create(tenant.unit.property.managerId, 'New ticket at ' + tenant.unit.property.name + ' / ' + tenant.unit.identifier + ': ' + ticket.title, db, ticket.id);
                 return ticket;
             });
         } catch (error) {
@@ -96,8 +96,8 @@ export const TicketService = {
             });
             if (result.count !== 1) throw new AppError('Ticket assignment changed. Refresh and try again.', 409);
             await db.activityLog.create({ data: { ticketId, userId: managerId, action: 'Ticket assigned to ' + tech.name } });
-            await NotificationService.create(technicianId, 'You have been assigned to Ticket #' + ticketId, db);
-            await NotificationService.create(ticket.tenantId, 'A technician has been assigned to your ticket.', db);
+            await NotificationService.create(technicianId, 'Ticket assigned: ' + ticket.title, db, ticketId);
+            await NotificationService.create(ticket.tenantId, 'A technician has been assigned: ' + ticket.title, db, ticketId);
             return db.ticket.findUniqueOrThrow({ where: { id: ticketId } });
         });
     },
@@ -122,8 +122,8 @@ export const TicketService = {
             await db.activityLog.create({ data: {
                 ticketId, userId: technicianId, action: 'Status changed from ' + previous + ' to ' + newStatus,
             } });
-            await NotificationService.create(ticket.tenantId, 'Your ticket status changed to ' + newStatus, db);
-            if (newStatus === 'DONE' && ticket.property) await NotificationService.create(ticket.property.managerId, 'Ticket #' + ticketId + ' at ' + ticket.property.name + ' marked as DONE.', db);
+            await NotificationService.create(ticket.tenantId, (newStatus === 'DONE' ? 'Ticket completed: ' : 'Work started: ') + ticket.title, db, ticketId);
+            if (newStatus === 'DONE' && ticket.property) await NotificationService.create(ticket.property.managerId, 'Ticket completed at ' + ticket.property.name + ': ' + ticket.title, db, ticketId);
             return db.ticket.findUniqueOrThrow({ where: { id: ticketId } });
         });
     },
