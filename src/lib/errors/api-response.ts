@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 export interface ApiError {
     success: false;
@@ -28,4 +29,14 @@ export class AppError extends Error {
         this.name = 'AppError';
         this.statusCode = statusCode;
     }
+}
+
+export function handleApiError(error: unknown) {
+    if (error instanceof AppError) return errorResponse(error.message, error.statusCode);
+    if (error instanceof SyntaxError) return errorResponse('Invalid JSON body', 400);
+    if (error instanceof z.ZodError) return errorResponse(error.issues[0]?.message ?? 'Invalid input', 400);
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2034') {
+        return errorResponse('The ticket changed during this request. Refresh and try again.', 409);
+    }
+    return errorResponse('Internal Server Error', 500);
 }

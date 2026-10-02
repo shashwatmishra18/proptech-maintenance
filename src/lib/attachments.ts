@@ -1,6 +1,8 @@
-import { readFile, realpath, stat } from 'fs/promises';
+import { readFile, realpath, stat, unlink } from 'fs/promises';
 import { join, sep } from 'path';
 import { AppError } from './errors/api-response';
+import type { Prisma } from '@prisma/client';
+import { prisma } from './prisma';
 
 const privatePrefix = '/api/attachments/files/';
 const filenamePattern = /^[a-zA-Z0-9][a-zA-Z0-9.-]{0,200}$/;
@@ -45,4 +47,32 @@ export async function validateOwnedUploads(urls: string[], userId: string) {
         }
         try { await readAttachment(url); } catch { throw new AppError('Invalid attachment', 400); }
     }
+}
+
+// Serialize attachment consumption and cleanup for the same uploader. Both
+// operations hold this database row lock until their transaction completes.
+export async function lockUploader(db: Prisma.TransactionClient, userId: string) {
+    await db.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+}
+
+export async function cleanupUnattachedUploads(urls: string[], userId: string) {
+    if (urls.length === 0) return;
+    await prisma.$transaction(async db => {
+        await lockUploader(db, userId);
+        for (const url of Array.from(new Set(urls))) {
+            const filename = url.slice(privatePrefix.length);
+            if (!url.startsWith(privatePrefix) || !filename.startsWith(userId + '-') ||
+                !filenamePattern.test(filename) || filename.includes('..')) throw new AppError('Invalid attachment', 400);
+            if (await db.ticketImage.findFirst({ where: { imageUrl: url }, select: { id: true } })) continue;
+            try {
+                const root = await realpath(join(process.cwd(), 'storage/uploads'));
+                const path = await realpath(join(root, filename));
+                if (!path.startsWith(root + sep)) throw new AppError('Invalid attachment', 400);
+                await unlink(path);
+            } catch (error) {
+                if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') continue;
+                throw error;
+            }
+        }
+    });
 }

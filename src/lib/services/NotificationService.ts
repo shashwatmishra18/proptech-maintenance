@@ -1,8 +1,9 @@
 import { prisma } from '../prisma';
+import type { Prisma } from '@prisma/client';
 
 export const NotificationService = {
-    create: async (userId: string, message: string) => {
-        return prisma.notification.create({
+    create: async (userId: string, message: string, db: Prisma.TransactionClient = prisma) => {
+        return db.notification.create({
             data: {
                 userId,
                 message,
@@ -10,14 +11,14 @@ export const NotificationService = {
         });
     },
 
-    createForAdmins: async (message: string) => {
-        const managers = await prisma.user.findMany({
+    createForAdmins: async (message: string, db: Prisma.TransactionClient = prisma) => {
+        const managers = await db.user.findMany({
             where: { role: 'MANAGER' },
             select: { id: true },
         });
 
         if (managers.length > 0) {
-            await prisma.notification.createMany({
+            await db.notification.createMany({
                 data: managers.map((manager) => ({
                     userId: manager.id,
                     message,
@@ -32,9 +33,9 @@ export const NotificationService = {
         });
     },
 
-    markAsRead: async (userId: string) => {
+    markAsRead: async (userId: string, ids: string[]) => {
         return prisma.notification.updateMany({
-            where: { userId, read: false },
+            where: { userId, id: { in: ids }, read: false },
             data: { read: true },
         });
     },

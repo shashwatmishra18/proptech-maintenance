@@ -1,12 +1,14 @@
 import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, unlink } from 'fs/promises';
+import { z } from 'zod';
 import { requireRole } from '@/lib/roles';
-import { errorResponse, successResponse } from '@/lib/errors/api-response';
-import { imageType, storedUploadUrl } from '@/lib/attachments';
+import { errorResponse, successResponse, handleApiError } from '@/lib/errors/api-response';
+import { imageType, storedUploadUrl, cleanupUnattachedUploads } from '@/lib/attachments';
 
 export async function POST(req: NextRequest) {
+    const written: string[] = [];
     try {
         const session = await requireRole(req, ['TENANT']);
         if (session instanceof Response) return session;
@@ -28,11 +30,38 @@ export async function POST(req: NextRequest) {
         const imageUrls = [];
         for (const file of validated) {
             const filename = session.userId + '-' + randomUUID() + '.' + file.extension;
-            await writeFile(join(root, filename), file.bytes, { flag: 'wx' });
+            const path = join(root, filename);
+            try {
+                await writeFile(path, file.bytes, { flag: 'wx' });
+            } catch (error) {
+                // A failed write can leave a partial new file; never remove a pre-existing collision.
+                if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) written.push(path);
+                throw error;
+            }
+            written.push(path);
             imageUrls.push(storedUploadUrl(filename));
         }
         return successResponse({ imageUrls });
     } catch {
+        for (const path of written) {
+            try { await unlink(path); } catch (error) {
+                if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) {
+                    console.warn('Partial upload cleanup could not complete.');
+                }
+            }
+        }
         return errorResponse('Upload failed', 500);
+    }
+}
+
+export async function DELETE(req: NextRequest) {
+    try {
+        const session = await requireRole(req, ['TENANT']);
+        if (session instanceof Response) return session;
+        const { imageUrls } = z.object({ imageUrls: z.array(z.string().startsWith('/api/attachments/files/')).max(5) }).parse(await req.json());
+        await cleanupUnattachedUploads(imageUrls, session.userId);
+        return successResponse({ message: 'Unlinked uploads cleaned up' });
+    } catch (error) {
+        return handleApiError(error);
     }
 }

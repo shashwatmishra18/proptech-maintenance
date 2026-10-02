@@ -11,7 +11,7 @@ export async function setSessionCookie(payload: JWTPayload) {
 }
 
 export function removeSessionCookie() {
-    cookies().set('session', '', { expires: new Date(0) });
+    cookies().set('session', '', { expires: new Date(0), maxAge: 0, path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
 }
 
 export async function getSession() {

@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { z } from 'zod';
 import { requireAuth } from '@/lib/roles';
-import { errorResponse, successResponse } from '@/lib/errors/api-response';
+import { errorResponse, successResponse, handleApiError } from '@/lib/errors/api-response';
 
 export async function GET(req: NextRequest) {
     try {
@@ -29,13 +30,16 @@ export async function PATCH(req: NextRequest) {
         const payload = await requireAuth(req);
         if (payload instanceof Response) return payload;
 
-        await prisma.notification.updateMany({
-            where: { userId: payload.userId, read: false },
-            data: { read: true }
+        const { ids } = z.object({ ids: z.array(z.string().uuid()).max(10) }).parse(await req.json());
+        const result = await prisma.$transaction(async db => {
+            const updated = await db.notification.updateMany({
+                where: { userId: payload.userId, id: { in: ids }, read: false }, data: { read: true },
+            });
+            const unreadCount = await db.notification.count({ where: { userId: payload.userId, read: false } });
+            return { updated: updated.count, unreadCount };
         });
-
-        return successResponse({ message: 'Marked as read' });
-    } catch {
-        return errorResponse('Failed to update notifications', 500);
+        return successResponse(result);
+    } catch (error) {
+        return handleApiError(error);
     }
 }

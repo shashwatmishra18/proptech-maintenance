@@ -1,14 +1,14 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { Priority, Status } from '@prisma/client';
 import { TicketService } from '@/lib/services/TicketService';
-import { AppError, errorResponse, successResponse } from '@/lib/errors/api-response';
+import { handleApiError, successResponse } from '@/lib/errors/api-response';
 import { requireAuth, requireRole } from '@/lib/roles';
-import { validateOwnedUploads } from '@/lib/attachments';
 
 const createTicketSchema = z.object({
     title: z.string().min(5).max(100),
     description: z.string().min(10).max(2000),
-    priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional().default('MEDIUM'),
+    priority: z.enum(Priority).optional().default('MEDIUM'),
     status: z.any().optional(),
     assignedToId: z.any().optional(),
     imageUrls: z.array(z.string().startsWith('/api/attachments/files/')).max(5).default([]),
@@ -21,13 +21,12 @@ export async function POST(req: NextRequest) {
 
         const body = await req.json();
         const data = createTicketSchema.parse(body);
-        await validateOwnedUploads(data.imageUrls, payload.userId);
 
         const ticket = await TicketService.create(
             {
                 title: data.title,
                 description: data.description,
-                priority: 'MEDIUM', // TENANT cannot override priority directly
+                priority: data.priority,
                 tenantId: payload.userId
             },
             data.imageUrls
@@ -35,10 +34,7 @@ export async function POST(req: NextRequest) {
 
         return successResponse(ticket, 201);
     } catch (error: unknown) {
-        if (error instanceof SyntaxError) return errorResponse('Invalid JSON body', 400);
-        if (error instanceof z.ZodError) return errorResponse('Invalid input', 400);
-        if (error instanceof AppError) return errorResponse(error.message, error.statusCode);
-        return errorResponse('Internal Server Error', 500);
+        return handleApiError(error);
     }
 }
 
@@ -48,14 +44,13 @@ export async function GET(req: NextRequest) {
         if (payload instanceof Response) return payload;
 
         const { searchParams } = new URL(req.url);
-        const status = z.enum(['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'DONE']).optional()
+        const status = z.enum(Status).optional()
             .parse(searchParams.get('status') ?? undefined);
 
         const tickets = await TicketService.getAllForUser(payload, status);
 
         return successResponse(tickets);
     } catch (error: unknown) {
-        if (error instanceof z.ZodError) return errorResponse('Invalid status filter', 400);
-        return errorResponse('Failed to fetch tickets', 500);
+        return handleApiError(error);
     }
 }
