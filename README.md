@@ -2,6 +2,8 @@
 
 A property-aware maintenance application for tenants, managers, and technicians. Managers manage their own properties, units, and tenant assignments. Tickets move from OPEN to ASSIGNED to IN_PROGRESS to DONE; role restrictions and private attachments remain enforced.
 
+[Live FixNest application](https://app-production-e601.up.railway.app) · [Production verification](RAILWAY-VERIFICATION.md).
+
 ## Requirements
 
 - Node.js 22 LTS and npm (Docker also uses Node 22). The patched runtime is Next.js 15.5.24 with React 18; cookies and route parameters use its async APIs.

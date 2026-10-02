@@ -1,6 +1,84 @@
-# Final Railway preparation verification
+# FixNest Railway verification
 
-Verified locally on 2026-10-03. Railway dashboard opened to the login page;
+## Actual production deployment — 2026-10-03
+
+FixNest is live at **https://app-production-e601.up.railway.app**.
+One project, `FixNest`, contains the GitHub-backed `app` service and private
+SSL-enabled PostgreSQL 18 service `Postgres`. The application runs one replica,
+with its private `app-volume` mounted at `/app/storage`. There is no public
+database TCP proxy. The deployed application commit is `e7e3b6f`, built from
+`shashwatmishra18/proptech-maintenance`, branch `main`; its
+[hosted verification workflow passed](https://github.com/shashwatmishra18/proptech-maintenance/actions/runs/37063011706).
+Wait for CI is enabled for automatic GitHub deployments.
+
+Production deployment `938d75b1-e7ee-4d05-a3d8-608e3d1e1608` succeeded.
+The configured pre-deploy command `node scripts/migrate-deploy.cjs` applied all
+five existing migrations. A subsequent read-only query confirmed every migration
+finished with no rollback, and `pg_stat_ssl` confirmed the real application
+database connection uses TLS. The actual database public CA is configured;
+strict certificate verification and bounded connection options remain enabled.
+No seed, reset, `db push`, or migration-development command ran in production.
+
+Startup logged `railway_gateway_started` with UID 1001. The storage root,
+`uploads`, and `legacy` directories are owned by UID/GID 1001. Railway uses
+`/api/health` with a 120-second timeout; HTTPS readiness returned only
+`{"status":"ready"}` with HTTP 200. The initial user-owned Manager was created
+using the existing bootstrap CLI with a masked private prompt and JSON stdin.
+No password appeared in chat, command arguments, or saved credential files.
+
+### Live acceptance results
+
+- Homepage, login, registration, recovery/invitation screens, metadata, icon,
+  security headers, and HTTPS readiness passed. Mobile verification at 390 × 844
+  found no horizontal overflow (document width 375).
+- Tenant registration, secure login cookies, role dashboards, profile updates,
+  password change, old-session revocation, and generic recovery passed.
+- Manager property/unit creation, tenant assignment, stale-version conflict,
+  property isolation, and ticket search/filter/pagination passed.
+- One synthetic maintenance request retained HIGH priority; tenant notes,
+  notification history, authorized links, and mark-read passed.
+- Private image upload/download passed. Anonymous, other-tenant, and other-manager
+  attachment requests were denied. Foreign ticket/property access, staff signup,
+  middleware bypass attempts, direct private file paths, and foreign origins
+  were rejected. Oversized JSON returned 413.
+- Live credential and upload budgets returned 429 with `Retry-After` despite
+  spoofed forwarding headers. API cache responses retained `no-store`.
+- Restarting the deployed app preserved the session, ticket, and exact private
+  image bytes. Both services subsequently reported SUCCESS with one running replica.
+- Email is explicitly disabled. A technician invitation honestly returned
+  `delivered: false`, without a token or URL; the account stayed inactive and
+  ticket assignment to it was rejected. Known/missing-account recovery responses
+  matched and disclosed no credential tokens.
+- All 78 automated tests passed again. Branding build/type/lint/audit and
+  standalone checks also passed; application audit reported zero vulnerabilities.
+
+No application defect was discovered. Early acceptance-harness expectations were
+corrected for the existing role-specific dashboards, authorization statuses, and
+manager notification links; application behavior was not changed. Synthetic
+acceptance accounts were retained, including accounts from the early harness
+attempt. Only one synthetic property/unit/ticket and one linked image were created;
+no production records were deleted. No large fixture runner ran against production.
+
+### Remaining acceptance limitations
+
+Real technician activation/login, ticket assignment/reassignment, and the
+technician IN_PROGRESS → DONE lifecycle await actual email delivery. Production
+token fixtures were deliberately not inserted. Those workflows, transaction
+rollback, concurrent ticket mutations, strict TLS failures, and database-outage
+readiness/recovery passed the isolated local PostgreSQL/container verification
+below; they are not claimed as live production results. The production database
+was not intentionally stopped to simulate an outage.
+
+To enable delivery later, configure the `app` service's Railway Variables:
+`EMAIL_PROVIDER=resend`, `RESEND_API_KEY` (private Resend API key), and `EMAIL_FROM`
+(verified sender). `APP_ORIGIN` is already the exact live HTTPS origin, which the
+existing invitation/recovery URL generator uses. Actual outbound email and
+received links remain unverified until those credentials are supplied privately.
+
+## Historical preparation verification
+
+The following records the earlier local-only preparation on 2026-10-03,
+before the production deployment above. Railway dashboard opened to the login page;
 there is no authenticated Railway session, CLI token or production credential
 available to this task. No Railway resource was provisioned or modified. No
 production database was connected, migrated, reset or seeded. There is no live
