@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.seed.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-ops",
+    "rootDir": "."
+  },
+  "include": ["prisma/bootstrap-manager.ts", "src/lib/password-policy.ts"]
+}

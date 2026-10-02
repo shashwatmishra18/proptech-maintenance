@@ -27,7 +27,7 @@ export async function readAttachment(storedUrl: string) {
     if (!storedUrl.startsWith(prefix)) throw new AppError('Attachment not found', 404);
     const filename = storedUrl.slice(prefix.length);
     if (!filenamePattern.test(filename) || filename.includes('..')) throw new AppError('Attachment not found', 404);
-    const bytes = await privateFileStorage(legacy ? join(process.cwd(), 'public/uploads') : uploadRoot()).read(filename);
+    const bytes = await privateFileStorage(legacy ? (process.env.LEGACY_UPLOAD_ROOT || join(process.cwd(), 'public/uploads')) : uploadRoot()).read(filename);
     const type = imageType(bytes);
     if (!type) throw new AppError('Attachment not found', 404);
     return { bytes, type };

@@ -9,4 +9,5 @@ public/uploads
 coverage
 *.tsbuildinfo
 *.log
+dist-ops
 scripts/security.test.cjs

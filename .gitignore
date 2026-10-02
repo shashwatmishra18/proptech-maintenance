@@ -44,3 +44,4 @@ next-env.d.ts
 
 /storage/dev-credentials/
 /storage/phase10/
+/dist-ops/
