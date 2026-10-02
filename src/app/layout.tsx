@@ -7,8 +7,8 @@ import { Toaster } from '@/components/ui/toaster';
 const font = localFont({ src: './fonts/GeistVF.woff', weight: '100 900' });
 
 export const metadata = {
-  title: 'PropManage - Maintenance App',
-  description: 'A mobile-first property maintenance management system.',
+  title: 'FixNest — Property Maintenance Management Platform',
+  description: 'A full-stack property maintenance platform for managing properties, units, tenants, technicians, and maintenance requests.',
 };
 
 export default function RootLayout({

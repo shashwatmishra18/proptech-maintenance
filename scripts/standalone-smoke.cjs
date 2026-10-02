@@ -26,8 +26,11 @@ async function check(secret, checks) {
         for (const [url, expected, options] of checks) {
             const res = await fetch('http://127.0.0.1:3102' + url, options);
             assert.equal(res.status, expected, url);
-            if (url === '/login') {
+            if (['/', '/login', '/register', '/forgot-password', '/reset-password', '/accept-invitation'].includes(url)) {
                 const html = await res.text();
+                assert.match(html, /<title>FixNest — Property Maintenance Management Platform<\/title>/);
+                assert.match(html, />FixNest</);
+                assert.doesNotMatch(html, /PropManage|Create Next App|vercel\.svg|next\.svg/);
                 const asset = html.match(/href="([^" ]+\/_next\/static\/[^" ]+\.css)"/) || html.match(/href="(\/_next\/static\/[^" ]+\.css)"/);
                 assert.ok(asset, 'Login stylesheet referenced');
                 assert.equal((await fetch('http://127.0.0.1:3102' + asset[1])).status, 200);
@@ -48,7 +51,13 @@ async function check(secret, checks) {
     fs.cpSync('.next/static', '.next/standalone/.next/static', { recursive: true });
     const image = fs.readdirSync('public/uploads').find(name => path.extname(name) === '.jpg');
     await check(randomBytes(48).toString('hex'), [
+        ['/', 200],
         ['/login', 200],
+        ['/register', 200],
+        ['/forgot-password', 200],
+        ['/reset-password', 200],
+        ['/accept-invitation', 200],
+        ['/icon.svg', 200],
         ['/api/users?role=TECHNICIAN', 401],
         ['/api/attachments/missing', 401],
         ['/uploads/' + image, 404],

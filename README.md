@@ -1,4 +1,4 @@
-# Property Maintenance Management System
+# FixNest — Property Maintenance Management Platform
 
 A property-aware maintenance application for tenants, managers, and technicians. Managers manage their own properties, units, and tenant assignments. Tickets move from OPEN to ASSIGNED to IN_PROGRESS to DONE; role restrictions and private attachments remain enforced.
 

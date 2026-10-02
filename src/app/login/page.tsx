@@ -35,7 +35,7 @@ export default function Login() {
             <Card className="w-full max-w-sm">
                 <CardHeader>
                     <h1 className="text-2xl font-semibold">Login</h1>
-                    <CardDescription>Enter your credentials to access your account</CardDescription>
+                    <CardDescription>Sign in to your FixNest account.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form aria-busy={pending} onSubmit={handleLogin} className="space-y-4">

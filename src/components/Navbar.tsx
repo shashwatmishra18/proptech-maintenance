@@ -15,7 +15,7 @@ export async function Navbar() {
     return (
         <nav aria-label="Main navigation" className="border-b bg-white shadow-sm px-4 sm:px-6 py-3 flex flex-wrap gap-3 items-center justify-between">
             <Link href={session ? dashboardPath : '/'} className="text-xl font-bold tracking-tight text-blue-600">
-                PropManage
+                FixNest
             </Link>
             <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                 {session ? (

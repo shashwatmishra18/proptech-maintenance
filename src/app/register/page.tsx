@@ -35,7 +35,7 @@ export default function Register() {
             <Card className="w-full max-w-sm">
                 <CardHeader>
                     <h1 className="text-2xl font-semibold">Register</h1>
-                    <CardDescription>Create a tenant account to report maintenance issues.</CardDescription>
+                    <CardDescription>Create a FixNest tenant account to report maintenance issues.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form aria-busy={pending} onSubmit={handleRegister} className="space-y-4">
