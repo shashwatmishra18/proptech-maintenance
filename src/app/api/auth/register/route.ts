@@ -5,8 +5,8 @@ import { AuthService } from '@/lib/services/AuthService';
 import { AppError, errorResponse, successResponse } from '@/lib/errors/api-response';
 
 const registerSchema = z.object({
-    name: z.string().min(2),
-    email: z.string().email(),
+    name: z.string().min(2).max(100),
+    email: z.string().email().max(254),
     password: passwordPolicy,
     role: z.literal('TENANT').optional(),
 });

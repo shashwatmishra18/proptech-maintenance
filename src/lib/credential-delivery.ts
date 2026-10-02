@@ -13,6 +13,7 @@ export async function deliverCredential(event: CredentialDelivery, sender: Email
             url.hash = 'token=' + event.token;
             const invitation = event.purpose === 'INVITE';
             const delivery = await sender.send({ to: event.email, subject: invitation ? 'Your PropManage technician invitation' : 'Reset your PropManage password', text: (invitation ? 'Set your password to accept your technician invitation. This link expires in 48 hours.' : 'Use this link to reset your password. It expires in 30 minutes. If you did not request this, ignore this message.') + '\n\n' + url.toString(), idempotencyKey: createHash('sha256').update(event.purpose + event.token).digest('hex') });
+            console.info(JSON.stringify({ event: 'credential_delivery', result: delivery }));
             return { delivered: delivery === 'accepted', delivery };
         } catch { return { delivered: false, delivery: 'failed' }; }
     }

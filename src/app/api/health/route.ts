@@ -12,6 +12,7 @@ export async function GET() {
         await prisma.$queryRaw`SELECT 1`;
         return NextResponse.json({ status: 'ready' }, { headers });
     } catch {
+        console.warn(JSON.stringify({ event: 'readiness_unavailable' }));
         return NextResponse.json({ status: 'unavailable' }, { status: 503, headers });
     }
 }

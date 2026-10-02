@@ -1,0 +1,8 @@
+# Optional override for managed PostgreSQL providers with a custom CA.
+services:
+  app:
+    volumes:
+      - ${DATABASE_CA_PATH:?Set absolute provider CA file}:/run/provider-ca.pem:ro
+  migrate:
+    volumes:
+      - ${DATABASE_CA_PATH:?Set absolute provider CA file}:/run/provider-ca.pem:ro

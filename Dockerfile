@@ -22,6 +22,11 @@ RUN npx prisma generate
 
 RUN npm run build
 
+# Explicit operator image: migration/bootstrap tools are excluded from runtime.
+FROM builder AS ops
+ENTRYPOINT []
+CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+
 # Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
@@ -39,6 +44,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/scripts/production-config.cjs /app/scripts/production-start.cjs ./scripts/
 RUN chown -R nextjs:nodejs public/uploads storage .next
 
 USER nextjs
@@ -50,4 +56,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD node 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+CMD ["node", "scripts/production-start.cjs"]

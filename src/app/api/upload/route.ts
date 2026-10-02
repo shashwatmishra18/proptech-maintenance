@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
-import { writeFile, mkdir, unlink } from 'fs/promises';
+import { unlink } from 'fs/promises';
+import { privateFileStorage, uploadRoot } from '@/lib/attachment-storage';
 import { z } from 'zod';
 import { requireRole } from '@/lib/roles';
 import { errorResponse, successResponse, handleApiError } from '@/lib/errors/api-response';
@@ -25,14 +26,14 @@ export async function POST(req: NextRequest) {
             if (!type || type !== file.type) return errorResponse('Only JPG/PNG images allowed', 400);
             validated.push({ bytes, extension: type === 'image/png' ? 'png' : 'jpg' });
         }
-        const root = join(process.cwd(), 'storage/uploads');
-        await mkdir(root, { recursive: true });
+        const root = uploadRoot();
+        const storage = privateFileStorage(root);
         const imageUrls = [];
         for (const file of validated) {
             const filename = session.userId + '-' + randomUUID() + '.' + file.extension;
             const path = join(root, filename);
             try {
-                await writeFile(path, file.bytes, { flag: 'wx' });
+                await storage.write(filename, file.bytes);
             } catch (error) {
                 // A failed write can leave a partial new file; never remove a pre-existing collision.
                 if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) written.push(path);

@@ -4,7 +4,7 @@ import { AuthService } from '@/lib/services/AuthService';
 import { AppError, errorResponse, successResponse } from '@/lib/errors/api-response';
 
 const loginSchema = z.object({
-    email: z.string().email(),
+    email: z.string().email().max(254),
     password: z.string().min(6).refine(value => Buffer.byteLength(value, 'utf8') <= 72, 'Password must not exceed 72 UTF-8 bytes'),
 });
 

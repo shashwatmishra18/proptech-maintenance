@@ -1,5 +1,5 @@
-import { readFile, realpath, stat, unlink } from 'fs/promises';
-import { join, sep } from 'path';
+import { join } from 'path';
+import { privateFileStorage, uploadRoot } from './attachment-storage';
 import { AppError } from './errors/api-response';
 import type { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
@@ -27,12 +27,7 @@ export async function readAttachment(storedUrl: string) {
     if (!storedUrl.startsWith(prefix)) throw new AppError('Attachment not found', 404);
     const filename = storedUrl.slice(prefix.length);
     if (!filenamePattern.test(filename) || filename.includes('..')) throw new AppError('Attachment not found', 404);
-    const root = await realpath(join(process.cwd(), legacy ? 'public/uploads' : 'storage/uploads'));
-    const path = await realpath(join(root, filename));
-    if (!path.startsWith(root + sep)) throw new AppError('Attachment not found', 404);
-    const info = await stat(path);
-    if (!info.isFile() || info.size > 5 * 1024 * 1024) throw new AppError('Attachment not found', 404);
-    const bytes = await readFile(path);
+    const bytes = await privateFileStorage(legacy ? join(process.cwd(), 'public/uploads') : uploadRoot()).read(filename);
     const type = imageType(bytes);
     if (!type) throw new AppError('Attachment not found', 404);
     return { bytes, type };
@@ -65,10 +60,7 @@ export async function cleanupUnattachedUploads(urls: string[], userId: string) {
                 !filenamePattern.test(filename) || filename.includes('..')) throw new AppError('Invalid attachment', 400);
             if (await db.ticketImage.findFirst({ where: { imageUrl: url }, select: { id: true } })) continue;
             try {
-                const root = await realpath(join(process.cwd(), 'storage/uploads'));
-                const path = await realpath(join(root, filename));
-                if (!path.startsWith(root + sep)) throw new AppError('Invalid attachment', 400);
-                await unlink(path);
+                await privateFileStorage(uploadRoot()).remove(filename);
             } catch (error) {
                 if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') continue;
                 throw error;

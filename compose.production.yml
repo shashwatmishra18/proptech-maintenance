@@ -1,0 +1,45 @@
+name: proptech-production
+services:
+  app:
+    image: ${APP_IMAGE:?Set immutable APP_IMAGE}
+    restart: unless-stopped
+    env_file: ${PRODUCTION_ENV_FILE:?Set private production environment file}
+    environment:
+      STORAGE_BACKEND: persistent
+      UPLOAD_ROOT: /app/storage/uploads
+      DEV_CREDENTIAL_LINKS: '0'
+    volumes:
+      - uploads:/app/storage/uploads
+      - ${LEGACY_UPLOAD_PATH:?Set preserved legacy directory}:/app/public/uploads:ro
+    expose: ['3000']
+    stop_grace_period: 30s
+    security_opt: ['no-new-privileges:true']
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+  edge:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443']
+    depends_on:
+      app: {condition: service_healthy}
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/templates/nginx.conf.template:ro
+      - ./deploy/proxy-common.conf:/etc/nginx/proxy-common.conf:ro
+      - ${TLS_CERT_PATH:?Set TLS certificate directory}:/etc/nginx/tls:ro
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?Set exact public hostname}
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+      NGINX_ENVSUBST_FILTER: PUBLIC_HOSTNAME
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+  migrate:
+    profiles: ['ops']
+    image: ${OPS_IMAGE:?Set matching immutable OPS_IMAGE}
+    env_file: ${PRODUCTION_ENV_FILE:?Set private production environment file}
+    command: ['node', 'node_modules/prisma/build/index.js', 'migrate', 'deploy']
+volumes:
+  uploads:
+    external: true
+    name: ${UPLOAD_VOLUME:?Set pre-provisioned persistent volume}

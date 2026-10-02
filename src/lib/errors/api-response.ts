@@ -14,11 +14,11 @@ export interface ApiSuccess<T> {
 export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 
 export function successResponse<T>(data: T, status = 200) {
-    return NextResponse.json({ success: true, data }, { status });
+    return NextResponse.json({ success: true, data }, { status, headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 export function errorResponse(error: string, status = 400) {
-    return NextResponse.json({ success: false, error }, { status });
+    return NextResponse.json({ success: false, error }, { status, headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 export class AppError extends Error {
@@ -39,5 +39,6 @@ export function handleApiError(error: unknown) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'P2034') {
         return errorResponse('The ticket changed during this request. Refresh and try again.', 409);
     }
+    console.error(JSON.stringify({ event: 'api_error', category: 'unexpected' }));
     return errorResponse('Internal Server Error', 500);
 }
