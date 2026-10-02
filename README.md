@@ -139,7 +139,7 @@ New uploads live in writable storage/uploads, persisted through the uploads volu
 
 ## Core workflow reliability
 
-Ticket creation accepts LOW, MEDIUM, or HIGH priority; omitted priority defaults to MEDIUM. New titles, descriptions, and notes are stored as plain text and rendered through React text expressions. Existing encoded records are not rewritten or automatically decoded.
+Ticket creation accepts LOW, MEDIUM, HIGH, or URGENT priority; omitted priority defaults to MEDIUM. New titles, descriptions, and notes are stored as plain text and rendered through React text expressions. Existing encoded records are not rewritten or automatically decoded.
 
 Creation, assignment, and status changes commit their ticket state, activity logs, and notifications together. Assignment and status changes use conditional updates against the expected previous state; stale or repeated writes return 409. Invalid transitions and completed-ticket notes return 400. Unexpected errors return a generic 500 response.
 
@@ -148,6 +148,16 @@ Attachment consumption and cleanup serialize on the uploader's existing database
 Mutation forms guard duplicate clicks and restore their buttons after failures. Logout clears the session cookie and navigates to login after success. Notification reads target the displayed subset, and local read state changes only after server confirmation.
 
 Run focused regression coverage with `node --test scripts/security.test.cjs scripts/reliability.test.cjs`. Reliability tests exercise real handlers/services with mocked database transactions, filesystem operations, and client hooks; they do not replace integration tests against PostgreSQL.
+
+## Application UI
+
+The public homepage offers sign-in and tenant registration. Signed-in visitors to `/` are redirected to their role dashboard. Tenant metrics display the API's total submitted and pending counts; manager and technician dashboards retain their existing supported metrics. Dashboard requests have independent loading, retryable error, and intentional empty states.
+
+All three authorized ticket views expose notes until completion. Assignment, status, and note controls share the existing duplicate-submission guard. Ticket detail errors distinguish missing tickets, forbidden access, expired sessions, and service/network failures; stale controls are hidden after a failed refresh. Notes clear only after a successful save.
+
+Notification dropdowns retain targeted reads and confirmed server counts, with loading, refresh/read errors, retry controls, and visible read labels. Notification records have no structured ticket ID, so items deliberately remain unlinked. Shared ticket cards, wrapping text, responsive detail columns, labelled form controls, a skip link, and native keyboard-accessible controls support desktop and mobile use.
+
+Run the UI regression suite with `node --test scripts/ui.test.cjs`, or run all suites with `node --test scripts/security.test.cjs scripts/reliability.test.cjs scripts/ui.test.cjs`. These lightweight tests cover request-state recovery, role redirects, dashboard states, note permissions/submission, and safe error messages without additional framework dependencies.
 
 ## Workflow Logic & Architecture
 
