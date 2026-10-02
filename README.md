@@ -284,3 +284,9 @@ erDiagram
     User ||--o{ ActivityLog : writes
     User ||--o{ Notification : receives
 ```
+
+## Production release
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the supported private-volume deployment,
+explicit migrations/manager bootstrap, HTTPS edge, CI, backups and rollback.
+The development Compose file is not the public production deployment configuration.

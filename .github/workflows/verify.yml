@@ -1,0 +1,50 @@
+name: Verify release
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: qa
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: proptech_db
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U qa -d proptech_db"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://qa:isolated-ci-only@127.0.0.1:55432/proptech_db
+      INTEGRATION_DATABASE_URL: postgresql://qa:isolated-ci-only@127.0.0.1:55432/proptech_db
+      RUN_LIVE_INTEGRATION: '1'
+      EMAIL_PROVIDER: ''
+      DEV_CREDENTIAL_LINKS: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm}
+      - name: Ephemeral test signing key
+        run: echo "JWT_SECRET=$(openssl rand -hex 48)" >> "$GITHUB_ENV"
+      - run: npm ci --no-audit --no-fund
+      - run: npm audit
+      - run: npx prisma validate
+      - run: npx prisma generate
+      - run: npx tsc --noEmit --incremental false
+      - run: npm run lint
+      - run: npm test
+      - run: node --test scripts/production.test.cjs
+      - run: npm run build
+      - run: npm run prisma:seed:check
+      - run: node scripts/standalone-smoke.cjs
+      - run: npx prisma migrate deploy
+      - run: node scripts/integration.cjs
+      - run: docker build --target runner -t proptech-ci .
+      - run: docker build --target ops -t proptech-ops-ci .
