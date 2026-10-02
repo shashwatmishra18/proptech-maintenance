@@ -34,6 +34,13 @@ module.exports = async function verify({ db, api, base, load, manager, manager2,
     const duplicates = await Promise.allSettled([1, 2].map(() => service.invite(manager.id, { name: 'Duplicate race', email: prefix + '.duplicate@example.test' }))); assert.equal(duplicates.filter(r => r.status === 'fulfilled').length, 1); assert.equal(duplicates.filter(r => r.status === 'rejected' && r.reason.statusCode === 409).length, 1);
     const racing = await invite('accept-race'); const accepts = await Promise.allSettled([1, 2].map(() => service.complete(complete(racing.token), 'INVITE'))); assert.equal(accepts.filter(r => r.status === 'fulfilled').length, 1); assert.equal(accepts.filter(r => r.status === 'rejected' && r.reason.statusCode === 400).length, 1);
     console.log('PASS Phase 8: role-bound hashed invitations, expiry/revocation/renewal, duplicate and consumption races, staff ownership and profile escalation guards');
+    const failedDelivery = load('src/lib/services/AccountService.ts', { '../prisma': { prisma: db }, '../credential-delivery': { deliverCredential: async () => ({ delivered: false, delivery: 'failed' }) } }).AccountService;
+    const failedInvite = await failedDelivery.invite(manager.id, { name: 'Delivery failure fixture', email: prefix + '.delivery-failed@example.test' });
+    assert.equal(failedInvite.delivery, 'failed'); assert.equal('url' in failedInvite, false);
+    const failedRecord = await db.credentialToken.findUniqueOrThrow({ where: { id: failedInvite.id } }); assert.equal(failedRecord.usedAt, null); assert.equal(failedRecord.revokedAt, null);
+    assert.deepEqual(await failedDelivery.requestReset(invited.email), await failedDelivery.requestReset(prefix + '.unknown-delivery@example.test'));
+    const renewedFailure = await failedDelivery.renew(manager.id, failedInvite.id); assert.equal(renewedFailure.delivery, 'failed'); assert.ok((await db.credentialToken.findUniqueOrThrow({ where: { id: failedInvite.id } })).revokedAt); assert.equal((await db.credentialToken.findUniqueOrThrow({ where: { id: renewedFailure.id } })).usedAt, null);
+    console.log('PASS Phase 9: failed invitation delivery preserves unused tokens, safe renew rotates links, and recovery failure keeps identical public responses');
 
     const newPassword = password + 'changed';
     await api('/api/account/password', cookie, 'POST', { currentPassword: 'wrong', password: newPassword, confirmation: newPassword }, 400);

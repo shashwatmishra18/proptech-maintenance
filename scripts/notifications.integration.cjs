@@ -1,0 +1,25 @@
+module.exports = async function verify({db,api,tenant,manager,tech,tech2,property,unit,tenantCookie,otherCookie,managerCookie,manager2Cookie,techCookie}) {
+  const assert=require('node:assert/strict');
+  const ticket=await db.ticket.create({data:{title:'Phase9 notification access',description:'Local notification fixture',tenantId:tenant.id,propertyId:property.id,unitId:unit.id,status:'ASSIGNED',assignedToId:tech.id}});
+  const owner=await db.notification.create({data:{userId:tenant.id,message:'Phase9 linked update',ticketId:ticket.id}});
+  const legacy=await db.notification.create({data:{userId:tenant.id,message:'Phase9 legacy/account update'}});
+  const other=await db.notification.create({data:{userId:manager.id,message:'Phase9 manager-only update',ticketId:ticket.id}});
+  const technician=await db.notification.create({data:{userId:tech.id,message:'Phase9 assigned update',ticketId:ticket.id}});
+  const foreign=await db.notification.create({data:{userId:manager.id,message:'Historical update without current access',ticketId:(await db.ticket.create({data:{title:'Private fixture',description:'Other scope',tenantId:tenant.id}})).id}});
+  for(let i=0;i<22;i++)await db.notification.create({data:{userId:tenant.id,message:'Phase9 bounded history '+i}});
+  let page=(await api('/api/notifications?pageSize=50',tenantCookie)).body;
+  assert.equal(page.notifications.find(n=>n.id===owner.id).ticketHref,'/tickets/'+ticket.id);assert.equal(page.notifications.find(n=>n.id===legacy.id).ticketHref,null);assert.ok(!page.notifications.some(n=>n.id===other.id));assert.ok(!JSON.stringify(page).includes('ticketId'));
+  const small=(await api('/api/notifications?pageSize=2&page=2',tenantCookie)).body;assert.equal(small.notifications.length,2);assert.equal(small.total,page.total);assert.equal(small.page,2);
+  await api('/api/notifications?userId='+manager.id,tenantCookie,'GET',undefined,400);await api('/api/notifications?pageSize=500',tenantCookie,'GET',undefined,400);await api('/api/notifications?page=1&page=2',tenantCookie,'GET',undefined,400);
+  const patch=(await api('/api/notifications',otherCookie,'PATCH',{ids:[owner.id]})).body;assert.equal(patch.updated,0);assert.equal((await db.notification.findUniqueOrThrow({where:{id:owner.id}})).read,false);
+  await api('/api/notifications',tenantCookie,'PATCH',{ids:[owner.id]});assert.equal((await db.notification.findUniqueOrThrow({where:{id:owner.id}})).read,true);assert.equal((await db.notification.findUniqueOrThrow({where:{id:legacy.id}})).read,false);
+  const cutoff=page.snapshotAt;const newArrival=await db.notification.create({data:{userId:tenant.id,message:'Phase9 arrival after read snapshot',createdAt:new Date(new Date(cutoff).getTime()+1000)}});
+  await api('/api/notifications',tenantCookie,'PATCH',{all:true,before:cutoff});assert.equal((await db.notification.findUniqueOrThrow({where:{id:legacy.id}})).read,true);assert.equal((await db.notification.findUniqueOrThrow({where:{id:other.id}})).read,false);assert.equal((await db.notification.findUniqueOrThrow({where:{id:newArrival.id}})).read,false);
+  page=(await api('/api/notifications',techCookie)).body;assert.equal(page.notifications.find(n=>n.id===technician.id).ticketHref,'/tech/tickets/'+ticket.id);
+  await db.ticket.update({where:{id:ticket.id},data:{assignedToId:tech2.id,version:{increment:1}}});page=(await api('/api/notifications',techCookie)).body;assert.equal(page.notifications.find(n=>n.id===technician.id).ticketHref,null);await api('/api/tickets/'+ticket.id,techCookie,'GET',undefined,403);
+  const managerPage=(await api('/api/notifications?pageSize=50',managerCookie)).body;assert.equal(managerPage.notifications.find(n=>n.id===other.id).ticketHref,'/manager/tickets/'+ticket.id);assert.equal(managerPage.notifications.find(n=>n.id===foreign.id).ticketHref,null);assert.ok(!(await api('/api/notifications',manager2Cookie)).body.notifications.some(n=>n.id===other.id));
+  const workflow=(await api('/api/tickets',tenantCookie,'POST',{title:'Phase9 lifecycle linkage',description:'Local transaction reference verification',priority:'MEDIUM'},201)).body;
+  await api('/api/tickets/'+workflow.id+'/status',managerCookie,'POST',{technicianId:tech.id});await api('/api/tickets/'+workflow.id+'/status',techCookie,'PATCH',{status:'IN_PROGRESS'});await api('/api/tickets/'+workflow.id+'/status',techCookie,'PATCH',{status:'DONE'});
+  const notifications=await db.notification.findMany({where:{ticketId:workflow.id}});assert.equal(notifications.length,6);assert.ok(notifications.every(n=>n.ticketId===workflow.id));
+  console.log('PASS Phase 9: PostgreSQL notification ownership, pagination/counts, individual/cutoff reads, legacy records, role links, reassignment access revocation and transactional lifecycle linkage');
+};

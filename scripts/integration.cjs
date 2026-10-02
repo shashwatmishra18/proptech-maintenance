@@ -11,6 +11,8 @@ assert.equal(url.pathname, '/proptech_db');
 assert.equal(url.port, '55432', 'Use only the isolated local integration database on port 55432');
 url.hostname = '127.0.0.1';
 process.env.DATABASE_URL = url.toString();
+// Automated fixtures must never send real email, even if the shell has provider credentials.
+process.env.EMAIL_PROVIDER = '';
 const { PrismaClient } = req('@prisma/client');
 const db = new PrismaClient();
 const ts = req('typescript');
@@ -206,6 +208,7 @@ async function main() {
   assert.equal((await fetch(base+upload[0],{headers:{cookie:tenantCookie}})).status,404);
   console.log('PASS: failed creation cleans only owned unlinked uploads; arbitrary external/private references denied');
   await require('./ticket-operations.integration.cjs')({db,api,base,load,tenant,manager,manager2,tech,tech2,property,property2,unit,tenantCookie,otherCookie,managerCookie,manager2Cookie,techCookie,tech2Cookie,ticket,imageUrl,legacy});
+  await require('./notifications.integration.cjs')({db,api,tenant,manager,tech,tech2,property,unit,tenantCookie,otherCookie,managerCookie,manager2Cookie,techCookie});
   await require('./accounts.integration.cjs')({db,api,base,load,manager,manager2,tenantCookie,otherCookie,managerCookie,manager2Cookie,techCookie,property,unit,password});
   const latestOccupant=await db.user.findUnique({where:{id:tenant.id}});
   await api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('tenant'),unitId:null,expectedVersion:latestOccupant.occupancyVersion});

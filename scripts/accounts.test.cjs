@@ -39,7 +39,7 @@ test('production delivery refuses token exposure even when the development flag 
     try {
         process.env.NODE_ENV = 'production'; process.env.DEV_CREDENTIAL_LINKS = '1';
         const { deliverCredential } = load('src/lib/credential-delivery.ts', { 'node:fs/promises': { mkdir: () => { throw Error('No production token files'); }, writeFile: () => { throw Error('No production token files'); } } });
-        for (const purpose of ['INVITE', 'RESET']) assert.deepEqual(await deliverCredential({ purpose, email: 'qa@example.test', token: 'a'.repeat(64) }), { delivered: false });
+        for (const purpose of ['INVITE', 'RESET']) { const result = await deliverCredential({ purpose, email: 'qa@example.test', token: 'a'.repeat(64) }); assert.equal(result.delivered, false); assert.equal('url' in result, false); }
     } finally { for (const [key, value] of [['NODE_ENV', previous.mode], ['DEV_CREDENTIAL_LINKS', previous.flag]]) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } }
 });
 test('development delivery requires explicit opt-in and keeps bearer tokens in URL fragments and private files', async () => {
