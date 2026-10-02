@@ -48,7 +48,7 @@ export default function Login() {
                             <Input type="password" id="login-password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
                         </div>
                         <Button type="submit" disabled={pending} className="w-full">{pending ? "Signing in…" : "Sign in"}</Button>
-                    </form><p className="mt-5 text-sm text-slate-600">New tenant? <a className="text-blue-700 underline" href="/register">Create an account</a></p>
+                    </form><a href="/forgot-password" className="inline-flex min-h-11 items-center text-blue-700 underline">Forgot password?</a><p className="mt-5 text-sm text-slate-600">New tenant? <a className="text-blue-700 underline" href="/register">Create an account</a></p>
                 </CardContent>
             </Card>
         </div>

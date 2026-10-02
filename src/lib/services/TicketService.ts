@@ -1,3 +1,4 @@
+import { lockStaff } from '../staff-lock';
 import { prisma } from '../prisma';
 import { authorizeTicketAccess } from '../roles';
 import { AppError } from '../errors/api-response';
@@ -86,7 +87,8 @@ export const TicketService = {
             if (ticket.status !== 'OPEN' || ticket.assignedToId) {
                 throw new AppError('This ticket is no longer open and unassigned. Refresh and try again.', 409);
             }
-            const tech = await db.user.findUnique({ where: { id: technicianId, role: 'TECHNICIAN' } });
+            await lockStaff(db, technicianId);
+            const tech = await db.user.findUnique({ where: { id: technicianId, role: 'TECHNICIAN', active: true } });
             if (!tech) throw new AppError('Invalid technician ID or user is not a technician', 400);
             const result = await db.ticket.updateMany({
                 where: { id: ticketId, status: 'OPEN', assignedToId: null, version: ticket.version ?? 0 },

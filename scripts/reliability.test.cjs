@@ -41,7 +41,7 @@ function fixture(status = 'OPEN', options = {}) {
         ticket: { findUnique: async () => structuredClone(state.ticket) },
         $transaction: async callback => {
             const draft = structuredClone(state);
-            const tx = {
+            const tx = { $queryRaw: async () => [],
                 user: {
                     findUnique: async ({ where }) => where.id === ids.tenant ? { id: ids.tenant, role: 'TENANT', unit: { id: 'unit', propertyId: 'property', identifier: '4B', property: { managerId: ids.manager, name: 'Test property' } } } : { id: ids.tech, role: 'TECHNICIAN', name: 'Tech & Co' },
                     findMany: async () => [{ id: ids.manager }],
@@ -240,7 +240,7 @@ test('two requests reading the same state allow only one conditional assignment/
         const logs = []; const notifications = [];
         const db = { $transaction: async callback => {
             const pendingLogs = []; const pendingNotifications = [];
-            const tx = {
+            const tx = { $queryRaw: async () => [],
                 ticket: {
                     findUnique: async () => { const snapshot = { ...initial }; if (++arrivals === 2) release(); await barrier; return snapshot; },
                     updateMany: async ({ where, data }) => {

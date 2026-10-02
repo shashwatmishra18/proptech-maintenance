@@ -49,10 +49,10 @@ export default function Register() {
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="register-password">Password</Label>
-                            <Input type="password" id="register-password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+                            <Input type="password" id="register-password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={10} />
                         </div>
                         <Button type="submit" disabled={pending} className="w-full">{pending ? "Creating account…" : "Create account"}</Button>
-                    </form><p className="mt-5 text-sm text-slate-600">Already registered? <a className="text-blue-700 underline" href="/login">Sign in</a></p>
+                    </form><p className="mt-3 text-sm text-slate-600">Passwords need 10 characters and at most 72 UTF-8 bytes.</p><p className="mt-5 text-sm text-slate-600">Already registered? <a className="text-blue-700 underline" href="/login">Sign in</a></p>
                 </CardContent>
             </Card>
         </div>

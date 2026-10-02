@@ -35,7 +35,7 @@ test('query treats SQL wildcards literally and allows only deterministic orderin
 });
 test('counts and pages use identical scoped filters, bounded offset, and a repeatable-read snapshot', async () => {
     const seen = []; let isolation;
-    const tx = { ticket: { count: async arg => { seen.push(arg); return 3; }, findMany: async arg => { seen.push(arg); return []; } } };
+    const tx = { $queryRaw: async () => [], ticket: { count: async arg => { seen.push(arg); return 3; }, findMany: async arg => { seen.push(arg); return []; } } };
     const service = load('src/lib/services/TicketService.ts', { '../prisma': { prisma: { $transaction: async (callback, options) => { isolation = options.isolationLevel; return callback(tx); } } } }).TicketService;
     const result = await service.getAllForUser({ userId: ids.manager, role: 'MANAGER' }, query.ticketQuerySchema.parse({ q: 'sink', page: '100', pageSize: '2' }));
     assert.equal(isolation, 'RepeatableRead'); assert.deepEqual(seen[0].where, seen[1].where); assert.equal(seen[1].take, 2); assert.equal(seen[1].skip, 2);
@@ -45,7 +45,7 @@ function fixture(status = 'ASSIGNED', failure = false) {
     let state = { ticket: { id: ids.ticket, title: 'Leak', version: 7, status, tenantId: ids.tenant, assignedToId: ids.tech, assignedTo: { name: 'Previous Tech' }, property: { managerId: ids.manager, name: 'Court' } }, logs: [], notifications: [] };
     const service = load('src/lib/services/TicketOperations.ts', { '../prisma': { prisma: { $transaction: async callback => {
         const draft = structuredClone(state);
-        const tx = {
+        const tx = { $queryRaw: async () => [],
             ticket: { findUnique: async () => structuredClone(draft.ticket), updateMany: async ({ where, data }) => { assert.equal(where.version, 7); assert.equal(where.assignedToId, ids.tech); Object.assign(draft.ticket, data, { version: 8 }); return { count: 1 }; }, findUniqueOrThrow: async () => draft.ticket },
             user: { findUnique: async ({ where }) => [ids.nextTech, ids.tech].includes(where.id) ? { id: where.id, name: 'Destination Tech' } : null },
             activityLog: { create: async ({ data }) => { draft.logs.push(data); } },

@@ -1,3 +1,4 @@
+import { passwordPolicy } from '../password-policy';
 import { prisma } from '../prisma';
 import bcrypt from 'bcrypt';
 import { AppError } from '../errors/api-response';
@@ -6,13 +7,14 @@ import { setSessionCookie } from '../auth';
 export const AuthService = {
     login: async (email: string, pass: string) => {
         const user = await prisma.user.findUnique({ where: { email } });
-        if (!user) throw new AppError('Invalid credentials', 400);
+        if (!user || !user.active) throw new AppError('Invalid credentials', 400);
 
         const valid = await bcrypt.compare(pass, user.password);
         if (!valid) throw new AppError('Invalid credentials', 400);
 
         const payload = {
             userId: user.id,
+            authVersion: user.authVersion,
             role: user.role,
             exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 days
         };
@@ -28,6 +30,7 @@ export const AuthService = {
     },
 
     register: async (email: string, pass: string, name: string) => {
+        passwordPolicy.parse(pass);
         const existing = await prisma.user.findUnique({ where: { email } });
         if (existing) throw new AppError('Email already exists', 400);
 

@@ -1,3 +1,4 @@
+import { passwordPolicy } from '@/lib/password-policy';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { AuthService } from '@/lib/services/AuthService';
@@ -6,7 +7,7 @@ import { AppError, errorResponse, successResponse } from '@/lib/errors/api-respo
 const registerSchema = z.object({
     name: z.string().min(2),
     email: z.string().email(),
-    password: z.string().min(6).refine(value => Buffer.byteLength(value, 'utf8') <= 72, 'Password must not exceed 72 UTF-8 bytes'),
+    password: passwordPolicy,
     role: z.literal('TENANT').optional(),
 });
 

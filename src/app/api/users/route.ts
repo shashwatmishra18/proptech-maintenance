@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
         if (role !== 'TECHNICIAN') return errorResponse('Only technician lookup is supported', 400);
 
         const users = await prisma.user.findMany({
-            where: { role },
+            where: { role, active: true },
             select: { id: true, name: true }
         });
 

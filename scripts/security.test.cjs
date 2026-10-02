@@ -61,8 +61,9 @@ test('Phase 1 registration, sessions, directory and attachment boundaries', asyn
     let signedIn;
     const bcrypt = require('bcrypt');
     const password = await bcrypt.hash('test-password', 10);
+    const knownRoles = new Map([[managerId, 'MANAGER'], [techId, 'TECHNICIAN'], [tenantId, 'TENANT']]);
     const database = { user: {
-        findUnique: async ({ where }) => where.email === 'manager@example.test' ? { id: managerId, email: where.email, name: 'Manager', role: 'MANAGER', password } : null,
+        findUnique: async ({ where }) => where.id ? { id: where.id, active: true, authVersion: 0, role: knownRoles.get(where.id) || 'TENANT' } : where.email === 'manager@example.test' ? { id: managerId, email: where.email, name: 'Manager', role: 'MANAGER', password, active: true, authVersion: 0 } : null,
         create: async ({ data }) => { created = data; return { id: tenantId, name: data.name, email: data.email, role: data.role }; },
         findMany: async (query) => { assert.deepEqual(query.select, { id: true, name: true }); return [{ id: techId, name: 'Technician' }]; },
     } };
@@ -114,7 +115,8 @@ test('Phase 1 registration, sessions, directory and attachment boundaries', asyn
     cookie = undefined;
     assert.equal((await getImage()).status, 401);
     for (const role of ['TENANT', 'TECHNICIAN']) {
-        cookie = await session.signToken({ userId: crypto.randomUUID(), role });
+        const foreignId = crypto.randomUUID(); knownRoles.set(foreignId, role);
+        cookie = await session.signToken({ userId: foreignId, role });
         assert.equal((await getImage()).status, 404);
     }
     assert.equal(reads, 0);

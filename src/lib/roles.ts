@@ -1,3 +1,4 @@
+import { validateAccountSession } from './account-session';
 import { Role } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from './auth';
@@ -7,13 +8,14 @@ export interface SessionPayload {
     userId: string;
     role: Role;
     exp: number;
+    authVersion?: number;
 }
 
 export async function requireAuth(req: NextRequest) {
     const session = req.cookies.get('session')?.value;
     if (!session) return errorResponse('Unauthorized', 401);
 
-    const payload = await verifyToken(session);
+    const payload = await validateAccountSession(await verifyToken(session));
     if (!payload) return errorResponse('Invalid token', 401);
 
     return payload as unknown as SessionPayload;

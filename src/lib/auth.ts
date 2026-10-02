@@ -1,3 +1,4 @@
+import { validateAccountSession } from './account-session';
 import type { JWTPayload } from 'jose';
 import { signToken, verifyToken } from './session';
 export { signToken, verifyToken } from './session';
@@ -17,7 +18,7 @@ export async function removeSessionCookie() {
 export async function getSession() {
     const session = (await cookies()).get('session')?.value;
     if (!session) return null;
-    return await verifyToken(session);
+    return validateAccountSession(await verifyToken(session));
 }
 
 export async function middleware(request: NextRequest) {
@@ -27,7 +28,7 @@ export async function middleware(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const payload = await verifyToken(session);
+    const payload = await validateAccountSession(await verifyToken(session));
 
     if (!payload) {
         return NextResponse.json({ success: false, error: 'Invalid Token' }, { status: 401 });

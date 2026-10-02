@@ -29,6 +29,15 @@ enum Priority {
 }
 
 model User {
+  active Boolean @default(true)
+  authVersion Int @default(0)
+  onboardedById String?
+  onboardedBy User? @relation("StaffOwner", fields: [onboardedById], references: [id], onDelete: Restrict)
+  onboardedStaff User[] @relation("StaffOwner")
+  credentialTokens CredentialToken[] @relation("TokenSubject")
+  createdTokens CredentialToken[] @relation("TokenCreator")
+  accountEvents AccountEvent[] @relation("EventSubject")
+  actedEvents AccountEvent[] @relation("EventActor")
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
@@ -46,6 +55,42 @@ model User {
   activityLogs  ActivityLog[]
   notifications Notification[]
   @@index([unitId])
+  @@index([onboardedById])
+}
+
+enum CredentialPurpose {
+  INVITE
+  RESET
+}
+
+model CredentialToken {
+  id String @id @default(uuid())
+  tokenHash String @unique
+  purpose CredentialPurpose
+  email String
+  role Role
+  authVersion Int
+  userId String
+  user User @relation("TokenSubject", fields: [userId], references: [id], onDelete: Restrict)
+  createdById String?
+  createdBy User? @relation("TokenCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  expiresAt DateTime
+  usedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, purpose])
+  @@index([createdById])
+}
+
+model AccountEvent {
+  id String @id @default(uuid())
+  userId String
+  user User @relation("EventSubject", fields: [userId], references: [id], onDelete: Restrict)
+  actorId String?
+  actor User? @relation("EventActor", fields: [actorId], references: [id], onDelete: Restrict)
+  action String
+  createdAt DateTime @default(now())
+  @@index([userId])
 }
 
 model Ticket {

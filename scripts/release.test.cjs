@@ -26,7 +26,7 @@ test('session verification rejects expired, future, malformed, wrong-role and wr
         const userId = crypto.randomUUID();
         const token = (claims, algorithm = 'HS256') => new SignJWT({ userId, role: 'TENANT', exp: Math.floor(Date.now() / 1000) + 60, ...claims }).setProtectedHeader({ alg: algorithm }).sign(key);
         assert.equal((await session.verifyToken(await token({}))).userId, userId);
-        for (const value of [await token({ exp: 1 }), await token({ nbf: Math.floor(Date.now() / 1000) + 3600 }), await token({ role: 'ADMIN' }), await token({ userId: 'invalid' }), await token({ exp: undefined }), await token({}, 'HS384'), 'not-a-token']) {
+        for (const value of [await token({ exp: 1 }), await token({ nbf: Math.floor(Date.now() / 1000) + 3600 }), await token({ role: 'ADMIN' }), await token({ userId: 'invalid' }), await token({ exp: undefined }), await token({ authVersion: -1 }), await token({ authVersion: '0' }), await token({ authVersion: 1.5 }), await token({}, 'HS384'), 'not-a-token']) {
             assert.equal(await session.verifyToken(value), null);
         }
         process.env.JWT_SECRET = 'short';
@@ -40,9 +40,9 @@ test('concurrent email uniqueness failures become client errors; unrelated datab
         '../prisma': { prisma: { user: { findUnique: async () => null, create: async () => { throw databaseError; } } } },
         bcrypt: { hash: async () => 'hash' }, '../auth': {},
     }).AuthService;
-    await assert.rejects(auth.register('test@example.test', 'password', 'Test'), error => error.statusCode === 400 && error.message === 'Email already exists');
+    await assert.rejects(auth.register('test@example.test', 'password123', 'Test'), error => error.statusCode === 400 && error.message === 'Email already exists');
     databaseError = new Error('private database details');
-    await assert.rejects(auth.register('test@example.test', 'password', 'Test'), error => error === databaseError);
+    await assert.rejects(auth.register('test@example.test', 'password123', 'Test'), error => error === databaseError);
 });
 
 test('registration rejects passwords bcrypt would silently truncate, including multibyte input', async () => {

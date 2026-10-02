@@ -4,6 +4,7 @@ export interface VerifiedSession extends JWTPayload {
     userId: string;
     role: 'TENANT' | 'MANAGER' | 'TECHNICIAN';
     exp: number;
+    authVersion?: number;
 }
 
 export function getSessionKey() {
@@ -25,7 +26,7 @@ export async function verifyToken(token: string) {
         const { payload } = await jwtVerify(token, key, { algorithms: ['HS256'] });
         if (typeof payload.userId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.userId) ||
             !['TENANT', 'MANAGER', 'TECHNICIAN'].includes(String(payload.role)) ||
-            typeof payload.exp !== 'number') return null;
+            typeof payload.exp !== 'number' || (payload.authVersion !== undefined && (!Number.isSafeInteger(payload.authVersion) || Number(payload.authVersion) < 0))) return null;
         return payload as VerifiedSession;
     } catch {
         return null;

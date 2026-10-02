@@ -1,3 +1,4 @@
+import { lockStaff } from '../staff-lock';
 import { prisma } from '../prisma';
 import { AppError } from '../errors/api-response';
 import { NotificationService } from './NotificationService';
@@ -26,7 +27,8 @@ export const TicketOperations = {
         const recipients = new Set([ticket.tenantId, ticket.property?.managerId, ticket.assignedToId].filter((value): value is string => !!value));
         if (input.action === 'reassign') {
             if (!['ASSIGNED', 'IN_PROGRESS'].includes(ticket.status)) throw new AppError('Reassignment requires an assigned or in-progress ticket', 400);
-            const tech = await db.user.findUnique({ where: { id: input.technicianId, role: 'TECHNICIAN' }, select: { id: true, name: true } });
+            await lockStaff(db, input.technicianId);
+            const tech = await db.user.findUnique({ where: { id: input.technicianId, role: 'TECHNICIAN', active: true }, select: { id: true, name: true } });
             if (!tech) throw new AppError('Invalid technician', 400);
             if (tech.id === ticket.assignedToId) throw new AppError('Choose a different technician', 400);
             assignedToId = tech.id; status = 'ASSIGNED'; recipients.add(tech.id);

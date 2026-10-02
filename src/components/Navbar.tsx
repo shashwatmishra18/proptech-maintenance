@@ -16,10 +16,12 @@ export async function Navbar() {
             <Link href={session ? dashboardPath : '/'} className="text-xl font-bold tracking-tight text-blue-600">
                 PropManage
             </Link>
-            <div className="flex items-center gap-2 sm:gap-4">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                 {session ? (
                     <>
                         {session.role === 'MANAGER' && <Link href="/manager/properties" className="text-sm text-blue-700 min-h-11 inline-flex items-center">Properties</Link>}
+                        <Link href="/account" className="text-sm text-blue-700 min-h-11 inline-flex items-center">Account</Link>
+                        {session.role === 'MANAGER' && <Link href="/manager/staff" className="text-sm text-blue-700 min-h-11 inline-flex items-center">Staff</Link>}
                         <NotificationBell />
                         <span className="hidden sm:inline text-sm text-slate-600 capitalize">{session.role.toLowerCase()}</span>
                         <LogoutButton />

@@ -5,7 +5,7 @@ import { AppError, errorResponse, successResponse } from '@/lib/errors/api-respo
 
 const loginSchema = z.object({
     email: z.string().email(),
-    password: z.string().min(6),
+    password: z.string().min(6).refine(value => Buffer.byteLength(value, 'utf8') <= 72, 'Password must not exceed 72 UTF-8 bytes'),
 });
 
 export async function POST(req: NextRequest) {
