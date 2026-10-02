@@ -35,6 +35,8 @@ function form() { const f=new FormData(); f.append('file',new Blob([Buffer.from(
 async function main() {
   // Snapshot every existing record before the additive migration; compare all old fields after it.
   const tables=['User','Ticket','TicketImage','ActivityLog','Notification','Property','Unit'];
+  const accountTables=await db.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('CredentialToken', 'AccountEvent')`;
+  tables.push(...accountTables.map(row=>row.tablename));
   const snapshots={};
   for(const table of tables) snapshots[table]=await db.$queryRawUnsafe('SELECT row_to_json(t) AS record FROM "'+table+'" t');
   for(const args of [['migrate','deploy'],['migrate','status']]) {
@@ -204,6 +206,7 @@ async function main() {
   assert.equal((await fetch(base+upload[0],{headers:{cookie:tenantCookie}})).status,404);
   console.log('PASS: failed creation cleans only owned unlinked uploads; arbitrary external/private references denied');
   await require('./ticket-operations.integration.cjs')({db,api,base,load,tenant,manager,manager2,tech,tech2,property,property2,unit,tenantCookie,otherCookie,managerCookie,manager2Cookie,techCookie,tech2Cookie,ticket,imageUrl,legacy});
+  await require('./accounts.integration.cjs')({db,api,base,load,manager,manager2,tenantCookie,otherCookie,managerCookie,manager2Cookie,techCookie,property,unit,password});
   const latestOccupant=await db.user.findUnique({where:{id:tenant.id}});
   await api('/api/tenant-assignment',managerCookie,'PATCH',{email:email('tenant'),unitId:null,expectedVersion:latestOccupant.occupancyVersion});
   assert.equal((await api('/api/occupancy',tenantCookie)).body.unit,null);

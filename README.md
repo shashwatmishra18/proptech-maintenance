@@ -145,7 +145,7 @@ New uploads live in writable storage/uploads, persisted through the uploads volu
 
 ## Properties, units, and migration
 
-Managers use `/manager/properties` to create/edit properties and units and assign existing tenants. Each property has one owning manager. Unit identifiers are trimmed, normalized to uppercase, and unique within a property; different properties may reuse an identifier. A tenant has at most one current unit; multiple tenants may share a unit. No invitations, deletion, leases, or occupancy history are implemented.
+Managers use `/manager/properties` to create/edit properties and units and assign existing tenants. Each property has one owning manager. Unit identifiers are trimmed, normalized to uppercase, and unique within a property; different properties may reuse an identifier. A tenant has at most one current unit; multiple tenants may share a unit. Tenant occupancy invitations, deletion, leases, and occupancy history remain deferred.
 
 Tenant lookup requires an exact email and returns only unassigned tenants or tenants already in the manager's properties. Managers can move those tenants between their own units or remove an assignment; they cannot claim another manager's occupied tenant. Assignment uses an expected version and locks the tenant row, so stale concurrent changes are rejected. Cross-manager transfers remain deferred.
 
@@ -212,6 +212,28 @@ Migration `20261002160000_ticket_operations` only appends CANCELLED to the enum 
 
 Run `node --test scripts/ticket-operations.test.cjs` (included in `npm test`). The guarded local `scripts/integration.cjs` also runs `scripts/ticket-operations.integration.cjs`: real PostgreSQL scoped queries, isolation, protected attachments, lifecycle authorization, notification rollback, and barrier-controlled reassignment/start/cancel/completion/reopen races. It retains unique fixtures and snapshots all existing tables before migration. UI tests cover role controls, native confirmation, stale refresh, and restored filter choices.
 
+## Accounts and staff onboarding (Phase 8)
+
+Public signup remains TENANT-only. Managers use `/manager/staff` to invite technicians; manager provisioning remains an operator/bootstrap action. Staff ownership records the inviting manager and only that manager may revoke/renew invitations or deactivate/reactivate the technician. Existing technicians without onboarding ownership remain globally assignable but cannot be deactivated through an arbitrary manager's account UI. Technician-property membership is unchanged and deferred.
+
+Invitation creation provisions an inactive technician with an unusable random password. Tokens contain 256 random bits; PostgreSQL stores only SHA-256 hashes, purpose, bound email/role, credential version, creator, expiry, and used/revoked timestamps. Invitations expire after 48 hours. Acceptance sets a validated password and activates the account atomically. Used/expired/revoked links fail safely; renew rotates an unused invitation and invalidates previous links. Duplicate accounts/invitations return 409. Accepted invitations cannot be renewed or reused.
+
+All new passwords require at least 10 characters, nonblank content, and at most 72 UTF-8 bytes to prevent bcrypt truncation. Spaces are allowed; arbitrary complexity rules are omitted. Passwords use bcrypt. Existing shorter credentials can still sign in; their next change must meet the shared policy. `/account` shows name, email and role, permits name editing, and requires the current password and matching confirmation for password changes. Email, role, and status are never self-editable.
+
+Forgot-password responses are identical for known, inactive and unknown emails and never contain reset links. Recovery tokens expire after 30 minutes, are single-use, and are invalidated by a newer request or credential change. Reset completion invalidates previous sessions. No email provider is configured: the UI explicitly says no delivery is available rather than claiming an email was sent.
+
+For local development testing only, set `DEV_CREDENTIAL_LINKS=1` with `NODE_ENV=development` and a local `APP_ORIGIN` (default `http://localhost:3000`). The delivery abstraction writes private files to ignored `storage/dev-credentials`; the manager also receives an invitation URL immediately after creation/renewal. An operator can read the matching reset file locally for QA. Bearer tokens stay in URL fragments, are submitted in request bodies, and are omitted from audit records. Keep local files and links private. This sink is disabled in production even if the flag is set, and its files are excluded from Docker. Production invitation/reset creation does not return tokens or pretend to deliver email. A real email-delivery implementation of `deliverCredential` remains required for production self-service onboarding/recovery.
+
+Only accepted technicians may be reactivated. Deactivation requires reassignment or completion of ALL ASSIGNED/IN_PROGRESS work, including work belonging to other managers; historical tickets and activity remain intact. Assignment/reassignment and status changes serialize on the technician row, preventing assignment to a simultaneously disabled account. All active technicians remain available in the existing global assignment directory.
+
+`User.active` defaults true and `authVersion` defaults zero. New JWTs include the version; existing JWTs without it mean zero and remain valid until a credential/status change. Every server-authenticated API request and server session lookup checks the current database account, role, active status, and version. Edge middleware retains signature/route checks; APIs enforce live account state. Password change/reset and deactivation/reactivation increment the version, invalidating all earlier JWTs. Logout still removes only the current browser cookie. Lightweight account events record invitation and credential/status operations without secrets; no audit-log product is added.
+
+Migration `20261002190000_account_credentials` only adds user fields, ownership relations, token/event tables, and indexes. Existing users, password hashes, roles, tickets, images and histories are preserved. Apply `npx prisma migrate deploy` before app rollout and regenerate Prisma for host development; never reset or run the destructive seed. Normal production operation does not require enabling development delivery.
+
+New endpoints: `GET/PATCH /api/account`, `POST /api/account/password`, `GET/POST /api/staff`, `PATCH /api/staff/:id`, `DELETE/POST /api/staff/invitations/:id` (revoke/renew), `POST /api/auth/forgot-password`, and `PUT/POST /api/auth/invitation` or `/api/auth/reset-password` (inspect/complete bearer link). Staff status updates require `expectedVersion`. Token acceptance and password mutations serialize on the user row and commit state, token consumption/revocation, and audit together.
+
+Run `node --test scripts/accounts.test.cjs` or `npm test`. The guarded local `scripts/integration.cjs` additionally runs `scripts/accounts.integration.cjs` for real PostgreSQL token consumption, ownership, password changes, resets, session invalidation, inactive accounts, account audit, and competing token/account/ticket mutations. Fixtures are retained. Continue using edge authentication rate limits from the deployment checklist; no in-process rate-limit substitute is introduced.
+
 ## Release verification and operations
 
 Run `npm ci --no-audit --no-fund`, the checks above, `npm audit`, and `node scripts/standalone-smoke.cjs`. `npm test` runs security, reliability, UI, and release edge-case tests. No seed runs in these checks.
@@ -226,9 +248,9 @@ Production deployment requires a TLS reverse proxy, request-size and authenticat
 
 Do not bake legacy uploads into an image: they are excluded from the build context and must be mounted. All app instances using the same database must share the same private attachment storage. Keep the existing volume's UID/GID 1001 writable by the app. Missing environment variables or database connectivity leave readiness unhealthy, rather than reporting a working deployment.
 
-Registration accepts passwords up to 72 UTF-8 bytes to prevent bcrypt truncation. Existing password hashes and user records are not rewritten. Sessions are stateless JWTs with seven-day expiry; logout removes the browser cookie, while secret rotation invalidates all tokens. There is no individual token revocation or account-management workflow.
+Registration accepts passwords up to 72 UTF-8 bytes to prevent bcrypt truncation. Existing password hashes and user records are not rewritten. Sessions use seven-day JWTs with live account/version validation; logout removes the browser cookie, credential/status changes revoke earlier account sessions, and secret rotation invalidates all tokens. There is no per-device session-management workflow.
 
-Known operational limits: unlinked uploads after a process crash or lost response may require a controlled manual review; linked or legacy files must not be deleted. Staff invitations, password reset, organizations, notification history, and scheduling remain outside this release.
+Known operational limits: unlinked uploads after a process crash or lost response may require a controlled manual review; linked or legacy files must not be deleted. Organizations, notification history, scheduling and production email delivery remain outside this release.
 
 ## ER Diagram
 

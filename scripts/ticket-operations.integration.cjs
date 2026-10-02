@@ -104,12 +104,12 @@ module.exports = async function verify({ db, api, base, load, tenant, manager, m
     async function race(status, actions) {
         const t = await db.ticket.create({ data: { title: marker + ' concurrency', description: 'Barrier-controlled local race', tenantId: tenant.id, propertyId: property.id, unitId: unit.id, status, assignedToId: tech.id } });
         let reads = 0, release; const gate = new Promise(resolve => { release = resolve; });
-        const wrapped = { $transaction: callback => db.$transaction(tx => callback({ ...tx, ticket: { ...tx.ticket, findUnique: async args => { const value = await tx.ticket.findUnique(args); if (++reads === 2) release(); await gate; return value; } } }), { timeout: 10000 }) };
+        const wrapped = { $transaction: callback => db.$transaction(tx => callback({ ...tx, $queryRaw: tx.$queryRaw.bind(tx), ticket: { ...tx.ticket, findUnique: async args => { const value = await tx.ticket.findUnique(args); if (++reads === 2) release(); await gate; return value; } } }), { timeout: 10000 }) };
         const overrides = { '../prisma': { prisma: wrapped } };
         const operations = load('src/lib/services/TicketOperations.ts', overrides).TicketOperations;
         const service = load('src/lib/services/TicketService.ts', overrides).TicketService;
         const results = await Promise.allSettled(actions.map(action => action({ t, operations, service })));
-        assert.equal(results.filter(r => r.status === 'fulfilled').length, 1); assert.equal(results.filter(r => r.status === 'rejected' && r.reason.statusCode === 409).length, 1);
+        assert.equal(results.filter(r => r.status === 'fulfilled').length, 1, JSON.stringify(results.map(r => ({ status: r.status, error: r.status === 'rejected' ? r.reason.name : undefined })))); assert.equal(results.filter(r => r.status === 'rejected' && r.reason.statusCode === 409).length, 1);
         assert.equal((await read(t.id)).version, 1); assert.equal(await db.activityLog.count({ where: { ticketId: t.id } }), 1);
     }
     const reassign = ({ t, operations }) => operations.apply(t.id, actor, { action: 'reassign', technicianId: tech2.id, expectedVersion: t.version });
