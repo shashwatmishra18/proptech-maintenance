@@ -6,10 +6,12 @@ import { requireRole } from '@/lib/roles';
 
 const updateStatusSchema = z.object({
     status: z.enum(['IN_PROGRESS', 'DONE']),
+    expectedVersion: z.number().int().min(0).optional(),
 });
 
 const assignSchema = z.object({
     technicianId: z.string().uuid(),
+    expectedVersion: z.number().int().min(0).optional(),
 });
 
 // Manager: Assign Technician
@@ -22,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const body = await req.json();
         const data = assignSchema.parse(body);
 
-        const ticket = await TicketService.assign(id, data.technicianId, payload.userId);
+        const ticket = await TicketService.assign(id, data.technicianId, payload.userId, data.expectedVersion);
         return successResponse(ticket);
     } catch (error: unknown) {
         return handleApiError(error);
@@ -39,7 +41,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         const body = await req.json();
         const data = updateStatusSchema.parse(body);
 
-        const ticket = await TicketService.updateStatus(id, data.status, payload.userId);
+        const ticket = await TicketService.updateStatus(id, data.status, payload.userId, data.expectedVersion);
         return successResponse(ticket);
     } catch (error: unknown) {
         return handleApiError(error);

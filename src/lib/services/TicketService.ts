@@ -1,31 +1,28 @@
 import { prisma } from '../prisma';
+import { authorizeTicketAccess } from '../roles';
 import { AppError } from '../errors/api-response';
 import { NotificationService } from './NotificationService';
 import { Priority, Status, Prisma } from '@prisma/client';
+import { ticketWhere, ticketOrder, ticketQuerySchema, type TicketQuery, type TicketActor } from '../ticket-query';
 import { attachmentUrl, validateOwnedUploads, lockUploader, cleanupUnattachedUploads } from '../attachments';
 
+function checkVersion(current: number | undefined, expected?: number) {
+    if (expected !== undefined && expected !== (current ?? 0)) throw new AppError('Ticket changed. Refresh and try again.', 409);
+}
 export const TicketService = {
-    getAllForUser: async (user: { userId: string, role: string }, status?: Status) => {
-        const where: Prisma.TicketWhereInput = {};
-        if (status) where.status = status;
-
-        if (user.role === 'TENANT') {
-            where.tenantId = user.userId;
-        } else if (user.role === 'TECHNICIAN') {
-            where.assignedToId = user.userId;
-        } else if (user.role === 'MANAGER') {
-            where.property = { managerId: user.userId };
-        } else if (user.role !== 'MANAGER') {
-            // Fail-safe block: unknown role blocked from fetching everything
-            return [];
-        }
-
+    getAllForUser: async (user: TicketActor, query: TicketQuery = ticketQuerySchema.parse({})) => {
+        const where = ticketWhere(user, query);
+        return prisma.$transaction(async db => {
+        const total = await db.ticket.count({ where });
+        const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+        const page = Math.min(query.page, totalPages);
         const isTech = user.role === 'TECHNICIAN';
 
-        const tickets = await prisma.ticket.findMany({
+        const tickets = await db.ticket.findMany({
             where,
             select: {
                 id: true,
+                version: true,
                 title: true,
                 description: true,
                 status: true,
@@ -42,9 +39,10 @@ export const TicketService = {
                 },
                 assignedTo: { select: { id: true, name: true, email: true } },
             },
-            orderBy: { createdAt: 'desc' }
+            orderBy: ticketOrder(query.sort), skip: (page - 1) * query.pageSize, take: query.pageSize
         });
-        return tickets.map(ticket => ({ ...ticket, images: ticket.images.map(image => ({ ...image, imageUrl: attachmentUrl(image.id) })) }));
+        return { tickets: tickets.map(ticket => ({ ...ticket, images: ticket.images.map(image => ({ ...image, imageUrl: attachmentUrl(image.id) })) })), total, page, pageSize: query.pageSize, totalPages };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     },
 
     create: async (data: { title: string; description: string; priority: Priority; tenantId: string }, imageUrls: string[]) => {
@@ -79,19 +77,20 @@ export const TicketService = {
         }
     },
 
-    assign: async (ticketId: string, technicianId: string, managerId: string) => {
+    assign: async (ticketId: string, technicianId: string, managerId: string, expectedVersion?: number) => {
         return prisma.$transaction(async db => {
             const ticket = await db.ticket.findUnique({ where: { id: ticketId }, include: { property: true } });
             if (!ticket) throw new AppError('Ticket not found', 404);
             if (ticket.property?.managerId !== managerId) throw new AppError('Ticket not found', 404);
+            checkVersion(ticket.version, expectedVersion);
             if (ticket.status !== 'OPEN' || ticket.assignedToId) {
                 throw new AppError('This ticket is no longer open and unassigned. Refresh and try again.', 409);
             }
             const tech = await db.user.findUnique({ where: { id: technicianId, role: 'TECHNICIAN' } });
             if (!tech) throw new AppError('Invalid technician ID or user is not a technician', 400);
             const result = await db.ticket.updateMany({
-                where: { id: ticketId, status: 'OPEN', assignedToId: null },
-                data: { status: 'ASSIGNED', assignedToId: technicianId },
+                where: { id: ticketId, status: 'OPEN', assignedToId: null, version: ticket.version ?? 0 },
+                data: { status: 'ASSIGNED', assignedToId: technicianId, version: { increment: 1 } },
             });
             if (result.count !== 1) throw new AppError('Ticket assignment changed. Refresh and try again.', 409);
             await db.activityLog.create({ data: { ticketId, userId: managerId, action: 'Ticket assigned to ' + tech.name } });
@@ -101,20 +100,21 @@ export const TicketService = {
         });
     },
 
-    updateStatus: async (ticketId: string, newStatus: Status, technicianId: string) => {
+    updateStatus: async (ticketId: string, newStatus: Status, technicianId: string, expectedVersion?: number) => {
         return prisma.$transaction(async db => {
             const ticket = await db.ticket.findUnique({ where: { id: ticketId }, include: { property: true } });
             if (!ticket) throw new AppError('Ticket not found', 404);
             if (ticket.assignedToId !== technicianId) throw new AppError('You are not assigned to this ticket', 403);
+            checkVersion(ticket.version, expectedVersion);
             const previous = newStatus === 'IN_PROGRESS' ? 'ASSIGNED' : newStatus === 'DONE' ? 'IN_PROGRESS' : null;
             if (!previous) throw new AppError('Invalid status', 400);
-            if (ticket.status === 'DONE' || ticket.status === newStatus) {
+            if (ticket.status === 'DONE' || ticket.status === 'CANCELLED' || ticket.status === newStatus) {
                 throw new AppError('Ticket status already changed. Refresh and try again.', 409);
             }
             if (ticket.status !== previous) throw new AppError('Invalid status transition', 400);
             const result = await db.ticket.updateMany({
-                where: { id: ticketId, status: previous, assignedToId: technicianId },
-                data: { status: newStatus },
+                where: { id: ticketId, status: previous, assignedToId: technicianId, version: ticket.version ?? 0 },
+                data: { status: newStatus, version: { increment: 1 } },
             });
             if (result.count !== 1) throw new AppError('Ticket status changed during this request. Refresh and try again.', 409);
             await db.activityLog.create({ data: {
@@ -126,15 +126,18 @@ export const TicketService = {
         });
     },
 
-    addNote: async (ticketId: string, userId: string, note: string) => {
+    addNote: async (ticketId: string, userId: string, note: string, actor?: TicketActor, expectedVersion?: number) => {
         return prisma.$transaction(async db => {
-            const ticket = await db.ticket.findUnique({ where: { id: ticketId } });
+            const ticket = await db.ticket.findUnique({ where: { id: ticketId }, include: { property: true } });
             if (!ticket) throw new AppError('Ticket not found', 404);
-            // Updating the row serializes notes with completion without adding a new lock table.
+            if (actor && !authorizeTicketAccess(ticket, actor)) throw new AppError(actor.role === 'MANAGER' ? 'Ticket not found' : 'Forbidden', actor.role === 'MANAGER' ? 404 : 403);
+            if (ticket.status === 'DONE' || ticket.status === 'CANCELLED') throw new AppError('Cannot add notes to a completed or cancelled ticket', 400);
+            checkVersion(ticket.version, expectedVersion);
+            // The version also serializes notes with reassignment and terminal transitions.
             const result = await db.ticket.updateMany({
-                where: { id: ticketId, status: { not: 'DONE' } }, data: { updatedAt: new Date() },
+                where: { id: ticketId, version: ticket.version ?? 0, assignedToId: ticket.assignedToId, status: { notIn: ['DONE', 'CANCELLED'] } }, data: { updatedAt: new Date(), version: { increment: 1 } },
             });
-            if (result.count !== 1) throw new AppError('Cannot add notes to a completed ticket', 400);
+            if (result.count !== 1) throw new AppError('Ticket changed. Refresh and try again.', 409);
             return db.activityLog.create({ data: { ticketId, userId, action: 'Note added: ' + note } });
         });
     },

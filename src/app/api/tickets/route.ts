@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { Priority, Status } from '@prisma/client';
+import { Priority } from '@prisma/client';
+import { parseTicketQuery } from '@/lib/ticket-query';
 import { TicketService } from '@/lib/services/TicketService';
 import { handleApiError, successResponse } from '@/lib/errors/api-response';
 import { requireAuth, requireRole } from '@/lib/roles';
@@ -46,10 +47,7 @@ export async function GET(req: NextRequest) {
         if (payload instanceof Response) return payload;
 
         const { searchParams } = new URL(req.url);
-        const status = z.enum(Status).optional()
-            .parse(searchParams.get('status') ?? undefined);
-
-        const tickets = await TicketService.getAllForUser(payload, status);
+        const tickets = await TicketService.getAllForUser(payload, parseTicketQuery(searchParams, payload.role));
 
         return successResponse(tickets);
     } catch (error: unknown) {

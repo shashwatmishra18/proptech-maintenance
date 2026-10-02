@@ -5,12 +5,13 @@ export interface UserSummary {
 }
 
 export interface TicketSummary {
+    version: number;
     property?: { id: string; name: string; address: string } | null;
     unit?: { id: string; identifier: string } | null;
     id: string;
     title: string;
     description: string;
-    status: 'OPEN' | 'ASSIGNED' | 'IN_PROGRESS' | 'DONE';
+    status: 'OPEN' | 'ASSIGNED' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
     priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
     createdAt: string;
     updatedAt: string;
@@ -18,6 +19,8 @@ export interface TicketSummary {
     assignedTo: UserSummary | null;
     images: { id: string; imageUrl: string }[];
 }
+
+export interface TicketPage { tickets: TicketSummary[]; total: number; page: number; pageSize: number; totalPages: number }
 
 export interface TicketDetail extends TicketSummary {
     activityLogs: {

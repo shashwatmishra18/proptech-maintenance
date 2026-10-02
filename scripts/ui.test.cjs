@@ -28,6 +28,7 @@ function text(element) {
     return [element.props?.children].flat(Infinity).map(text).join(' ');
 }
 const controls = {
+    '@/hooks/use-ticket-query': { useTicketQuery: () => ({ query: '', url: '/api/tickets', change() {} }) },
     'next/link': 'a', 'next/image': 'img',
     './ui/card': { Card: 'article', CardHeader: 'header', CardTitle: 'h2', CardContent: 'div' },
     './ui/button': { Button: 'button' }, './ui/label': { Label: 'label' }, './ui/textarea': { Textarea: 'textarea' },
@@ -97,7 +98,7 @@ test('dashboard loading/errors never masquerade as zero metrics or an empty tick
         resource = { ...resource, loading: true, error: null };
     }
     const metrics = { totalSubmitted: 0, pending: 0 };
-    const emptyDashboard = load('src/components/Dashboard.tsx', { ...controls, '@/hooks/use-resource': { useResource: url => ({ data: url === '/api/metrics' ? metrics : [], loading: false, error: null }) } }).Dashboard;
+    const emptyDashboard = load('src/components/Dashboard.tsx', { ...controls, '@/hooks/use-resource': { useResource: url => ({ data: url === '/api/metrics' ? metrics : { tickets: [], total: 0, page: 1, pageSize: 12, totalPages: 1 }, loading: false, error: null }) } }).Dashboard;
     assert.match(text(emptyDashboard({ role: 'TENANT' })), /Total submitted.*0.*Pending.*0.*haven’t reported/);
 });
 
@@ -124,4 +125,38 @@ test('error states distinguish missing tickets, forbidden access and expired ses
     const { RequestError } = load('src/lib/client-request.ts');
     const { ErrorState } = load('src/components/RequestState.tsx', { './ui/button': { Button: 'button' }, '@/lib/client-request': { RequestError } });
     for (const [status, message] of [[404, /could not be found/], [403, /do not have access/], [401, /session has expired/], [500, /try again/]]) { const tree = ErrorState({ error: new RequestError('sensitive internal failure', false, status), retry() {} }); assert.match(text(tree), message); assert.doesNotMatch(text(tree), /sensitive/); }
+});
+
+test('lifecycle buttons respect roles, require confirmation and submit the displayed ticket version', async () => {
+    const ticket = { version: 9, title: 'Issue', status: 'OPEN', priority: 'HIGH', createdAt: new Date().toISOString(), tenant: { name: 'Tenant' }, images: [], activityLogs: [] };
+    const sent = []; let confirmed = false;
+    const previous = global.window; global.window = { confirm: () => confirmed };
+    const view = load('src/components/TicketDetailView.tsx', { ...controls, react: { useState: () => ['', () => {}] }, 'next/navigation': { useParams: () => ({ id: 'ticket' }) }, '@/hooks/use-resource': { useResource: url => ({ data: url?.includes('/users') ? [] : ticket, loading: false, error: null, reload: async () => {} }) }, '@/hooks/use-mutation': { useMutation: () => ({ pending: false, run: action => action() }) }, '@/hooks/use-toast': { useToast: () => ({ toast() {} }) }, '@/lib/client-request': { requestData: async (url, options) => sent.push(JSON.parse(options.body)) } }).TicketDetailView;
+    try {
+        const button = role => nodes(view({ role })).find(n => n.type === 'button' && text(n) === 'Cancel ticket');
+        assert.ok(button('TENANT')); assert.equal(button('TECHNICIAN'), undefined);
+        button('TENANT').props.onClick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(sent.length, 0);
+        confirmed = true; button('TENANT').props.onClick(); await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(sent[0], { action: 'cancel', expectedVersion: 9 });
+        ticket.status = 'ASSIGNED'; assert.equal(button('TENANT'), undefined); assert.ok(button('MANAGER'));
+        ticket.status = 'DONE';
+        for (const role of ['TENANT', 'TECHNICIAN']) assert.equal(nodes(view({ role })).find(n => n.type === 'button' && text(n) === 'Reopen ticket'), undefined);
+        const reopen = nodes(view({ role: 'MANAGER' })).find(n => n.type === 'button' && text(n) === 'Reopen ticket'); reopen.props.onClick(); await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(sent[1], { action: 'reopen', expectedVersion: 9 });
+        ticket.status = 'CANCELLED'; for (const role of ['TENANT', 'MANAGER', 'TECHNICIAN']) { assert.equal(nodes(view({ role })).filter(n => n.type === 'textarea').length, 0); assert.equal(button(role), undefined); }
+    } finally { global.window = previous; }
+});
+
+test('stale detail mutations refresh confirmed state and keep the failed note', async () => {
+    const { RequestError } = load('src/lib/client-request.ts'); let refreshed = 0, note = 'Keep me', failure;
+    const ticket = { version: 4, title: 'Issue', status: 'ASSIGNED', priority: 'HIGH', createdAt: new Date().toISOString(), tenant: { name: 'Tenant' }, images: [], activityLogs: [] };
+    const view = load('src/components/TicketDetailView.tsx', { ...controls, react: { useState: () => [note, value => { note = value; }] }, 'next/navigation': { useParams: () => ({ id: 'ticket' }) }, '@/hooks/use-resource': { useResource: () => ({ data: ticket, loading: false, error: null, reload: async () => { refreshed++; } }) }, '@/hooks/use-mutation': { useMutation: () => ({ pending: false, run: async action => { try { await action(); } catch (error) { failure = error; } } }) }, '@/hooks/use-toast': { useToast: () => ({ toast() {} }) }, '@/lib/client-request': { RequestError, requestData: async () => { throw new RequestError('Refresh', false, 409); } } }).TicketDetailView;
+    const form = nodes(view({ role: 'TENANT' })).find(n => n.type === 'form'); form.props.onSubmit({ preventDefault() {} }); await new Promise(resolve => setImmediate(resolve)); assert.equal(refreshed, 1); assert.equal(note, 'Keep me'); assert.equal(failure.status, 409);
+});
+
+test('role-specific filters restore URL values after authorized choices load', () => {
+    let loading = true;
+    const component = load('src/components/TicketFilters.tsx', { ...controls, './ui/input': { Input: 'input' }, '@/hooks/use-ticket-query': { useTicketQuery: () => ({ query: 'propertyId=own-property&status=CANCELLED', change() {} }) }, '@/hooks/use-resource': { useResource: () => ({ loading, data: loading ? null : { properties: [{ id: 'own-property', name: 'Own Property', units: [] }], technicians: [] }, error: null }) } }).TicketFilters;
+    const field = role => nodes(component({ role })).find(n => n.props?.id === 'ticket-property');
+    assert.equal(field('TENANT'), undefined); assert.equal(field('MANAGER').props.disabled, true); const before = field('MANAGER').key;
+    loading = false; assert.notEqual(field('MANAGER').key, before); assert.equal(field('MANAGER').props.defaultValue, 'own-property'); assert.match(text(field('MANAGER')), /Own Property/);
+    assert.equal(nodes(component({ role: 'TECHNICIAN' })).find(n => n.props?.id === 'ticket-assignee'), undefined);
 });

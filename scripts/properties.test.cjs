@@ -36,12 +36,13 @@ test('manager authorization rejects other owners and unmapped legacy tickets; te
 test('manager ticket lists and every metric query carry the property owner scope', async () => {
     const managerId = crypto.randomUUID(); const queries = [];
     const prisma = { ticket: { findMany: async query => { queries.push(query.where); return []; }, count: async query => { queries.push(query.where); return 0; } } };
+    prisma.$transaction = callback => callback(prisma);
     const overrides = { '../prisma': { prisma }, '@/lib/prisma': { prisma }, '@/lib/roles': { requireRole: async () => ({ role: 'MANAGER', userId: managerId }) } };
     const tickets = load('src/lib/services/TicketService.ts', overrides).TicketService;
     await tickets.getAllForUser({ userId: managerId, role: 'MANAGER' });
     const metrics = load('src/app/api/metrics/route.ts', overrides);
     assert.equal((await metrics.GET(new NextRequest('http://localhost/api/metrics'))).status, 200);
-    assert.equal(queries.length, 6);
+    assert.equal(queries.length, 7);
     assert.ok(queries.every(query => query.property.managerId === managerId));
 });
 test('unassigned tenant creation is rejected before ticket/activity/notification writes', async () => {

@@ -33,7 +33,7 @@ function request(body, method = 'POST', url = '/api/test') {
 
 function fixture(status = 'OPEN', options = {}) {
     let state = {
-        ticket: { id: ids.ticket, title: 'Original', description: 'Description', priority: 'MEDIUM', status, tenantId: ids.tenant, assignedToId: status === 'OPEN' ? null : ids.tech, property: { managerId: ids.manager, name: 'Test property' } },
+        ticket: { version: 0, id: ids.ticket, title: 'Original', description: 'Description', priority: 'MEDIUM', status, tenantId: ids.tenant, assignedToId: status === 'OPEN' ? null : ids.tech, property: { managerId: ids.manager, name: 'Test property' } },
         logs: [], notifications: [], images: options.images || [],
     };
     const events = [];
@@ -58,9 +58,10 @@ function fixture(status = 'OPEN', options = {}) {
                     },
                     updateMany: async ({ where, data }) => {
                         events.push({ where, data });
-                        const expected = typeof where.status === 'string' ? draft.ticket.status === where.status : draft.ticket.status !== 'DONE';
-                        if (options.loseCAS || !expected || ('assignedToId' in where && where.assignedToId !== draft.ticket.assignedToId)) return { count: 0 };
-                        Object.assign(draft.ticket, data);
+                        const expected = typeof where.status === 'string' ? draft.ticket.status === where.status : !where.status.notIn.includes(draft.ticket.status);
+                        if (options.loseCAS || (where.version !== undefined && where.version !== draft.ticket.version) || !expected || ('assignedToId' in where && where.assignedToId !== draft.ticket.assignedToId)) return { count: 0 };
+                        const version = draft.ticket.version + (data.version?.increment || 0);
+                        Object.assign(draft.ticket, data, { version });
                         return { count: 1 };
                     },
                 },
@@ -125,7 +126,7 @@ test('assignment uses an OPEN/unassigned predicate and commits a single log with
     const f = fixture();
     const ticket = await f.service.assign(ids.ticket, ids.tech, ids.manager);
     assert.equal(ticket.status, 'ASSIGNED');
-    assert.deepEqual(f.events[0].where, { id: ids.ticket, status: 'OPEN', assignedToId: null });
+    assert.deepEqual(f.events[0].where, { id: ids.ticket, status: 'OPEN', assignedToId: null, version: 0 });
     assert.equal(f.state().logs.length, 1);
     assert.equal(f.state().notifications.length, 2);
     await assert.rejects(f.service.assign(ids.ticket, crypto.randomUUID(), ids.manager), error => error.statusCode === 409);
@@ -149,7 +150,7 @@ test('status transitions preserve sequence, ownership and repeat conflicts', asy
     await assert.rejects(f.service.updateStatus(ids.ticket, 'DONE', ids.tech), error => error.statusCode === 400);
     await assert.rejects(f.service.updateStatus(ids.ticket, 'IN_PROGRESS', crypto.randomUUID()), error => error.statusCode === 403);
     assert.equal((await f.service.updateStatus(ids.ticket, 'IN_PROGRESS', ids.tech)).status, 'IN_PROGRESS');
-    assert.deepEqual(f.events.find(event => typeof event === 'object').where, { id: ids.ticket, status: 'ASSIGNED', assignedToId: ids.tech });
+    assert.deepEqual(f.events.find(event => typeof event === 'object').where, { id: ids.ticket, status: 'ASSIGNED', assignedToId: ids.tech, version: 0 });
     await assert.rejects(f.service.updateStatus(ids.ticket, 'IN_PROGRESS', ids.tech), error => error.statusCode === 409);
     assert.equal((await f.service.updateStatus(ids.ticket, 'DONE', ids.tech)).status, 'DONE');
     assert.equal(f.state().logs.length, 2);

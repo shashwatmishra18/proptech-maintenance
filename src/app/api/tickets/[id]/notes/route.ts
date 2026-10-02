@@ -5,7 +5,7 @@ import { requireAuth, authorizeTicketAccess } from '@/lib/roles';
 import { errorResponse, handleApiError, successResponse } from '@/lib/errors/api-response';
 import { TicketService } from '@/lib/services/TicketService';
 
-const noteSchema = z.object({ note: z.string().min(1).max(1000) });
+const noteSchema = z.object({ note: z.string().min(1).max(1000), expectedVersion: z.number().int().min(0).optional() });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return errorResponse(payload.role === 'MANAGER' ? 'Ticket not found' : 'Forbidden. Access denied.', payload.role === 'MANAGER' ? 404 : 403);
         }
 
-        const log = await TicketService.addNote(id, payload.userId, data.note);
+        const log = await TicketService.addNote(id, payload.userId, data.note, payload, data.expectedVersion);
 
         return successResponse(log, 201);
     } catch (error: unknown) {
