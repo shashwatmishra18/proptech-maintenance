@@ -1,12 +1,14 @@
 'use client';
 
+import type { TicketSummary } from '@/lib/types';
+
 import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 
 export default function TenantDashboard() {
-    const [tickets, setTickets] = useState<any[]>([]);
+    const [tickets, setTickets] = useState<TicketSummary[]>([]);
 
     useEffect(() => {
         fetch('/api/tickets').then(r => r.json()).then(d => {
@@ -44,7 +46,7 @@ export default function TenantDashboard() {
                 ))}
                 {tickets.length === 0 && (
                     <div className="col-span-full p-8 text-center text-slate-500 bg-slate-100 rounded-lg">
-                        You haven't reported any issues yet.
+                        You haven&apos;t reported any issues yet.
                     </div>
                 )}
             </div>

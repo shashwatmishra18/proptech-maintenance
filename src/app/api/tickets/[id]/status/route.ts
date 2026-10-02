@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { TicketService } from '@/lib/services/TicketService';
 import { AppError, errorResponse, successResponse } from '@/lib/errors/api-response';
 import { requireRole } from '@/lib/roles';
-import { prisma } from '@/lib/prisma';
 
 const updateStatusSchema = z.object({
     status: z.enum(['IN_PROGRESS', 'DONE']),
@@ -24,10 +23,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
         const ticket = await TicketService.assign(params.id, data.technicianId, payload.userId);
         return successResponse(ticket);
-    } catch (error: any) {
+    } catch (error: unknown) {
+        if (error instanceof SyntaxError) return errorResponse('Invalid JSON body', 400);
         if (error instanceof z.ZodError) return errorResponse('Invalid input', 400);
         if (error instanceof AppError) return errorResponse(error.message, error.statusCode);
-        return errorResponse(error.message, 500);
+        return errorResponse('Internal Server Error', 500);
     }
 }
 
@@ -42,9 +42,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
         const ticket = await TicketService.updateStatus(params.id, data.status, payload.userId);
         return successResponse(ticket);
-    } catch (error: any) {
+    } catch (error: unknown) {
+        if (error instanceof SyntaxError) return errorResponse('Invalid JSON body', 400);
         if (error instanceof z.ZodError) return errorResponse('Invalid input', 400);
         if (error instanceof AppError) return errorResponse(error.message, error.statusCode);
-        return errorResponse(error.message, 500);
+        return errorResponse('Internal Server Error', 500);
     }
 }

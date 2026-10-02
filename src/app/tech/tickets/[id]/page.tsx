@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import type { TicketDetail } from '@/lib/types';
+
+import { useCallback, useEffect, useState } from 'react';
+import Image from 'next/image';
+import { useParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,21 +13,20 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function TechTicketDetail() {
     const params = useParams();
-    const router = useRouter();
     const { toast } = useToast();
-    const [ticket, setTicket] = useState<any>(null);
+    const [ticket, setTicket] = useState<TicketDetail | null>(null);
     const [note, setNote] = useState('');
     const [addingNote, setAddingNote] = useState(false);
 
-    const fetchTicket = () => {
+    const fetchTicket = useCallback(() => {
         fetch(`/api/tickets/${params.id}`).then(r => r.json()).then(d => {
             if (d.success) setTicket(d.data);
         });
-    };
+    }, [params.id]);
 
     useEffect(() => {
         fetchTicket();
-    }, [params.id]);
+    }, [fetchTicket]);
 
     const handleStatusUpdate = async (newStatus: string) => {
         const res = await fetch(`/api/tickets/${params.id}/status`, {
@@ -90,9 +92,9 @@ export default function TechTicketDetail() {
                             <CardHeader><CardTitle>Attached Images</CardTitle></CardHeader>
                             <CardContent>
                                 <div className="flex flex-wrap gap-4">
-                                    {ticket.images.map((img: any) => (
+                                    {ticket.images.map((img) => (
                                         <div key={img.id} className="relative w-32 h-32 rounded-md overflow-hidden border">
-                                            <img src={img.imageUrl} alt="Ticket attachment" className="object-cover w-full h-full" />
+                                            <Image src={img.imageUrl} alt="Ticket attachment" fill sizes="128px" className="object-cover" unoptimized />
                                         </div>
                                     ))}
                                 </div>
@@ -104,7 +106,7 @@ export default function TechTicketDetail() {
                         <CardHeader><CardTitle>Activity Log</CardTitle></CardHeader>
                         <CardContent>
                             <div className="space-y-4">
-                                {ticket.activityLogs.map((log: any) => (
+                                {ticket.activityLogs.map((log) => (
                                     <div key={log.id} className="border-l-2 border-slate-200 pl-4 py-1">
                                         <p className="text-sm font-medium text-slate-900">{log.action}</p>
                                         <p className="text-xs text-slate-500">

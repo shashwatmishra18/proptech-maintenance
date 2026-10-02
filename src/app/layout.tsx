@@ -1,9 +1,10 @@
 import './globals.css';
-import { Inter } from 'next/font/google';
+import localFont from 'next/font/local';
 import { Navbar } from '@/components/Navbar';
 import { Toaster } from '@/components/ui/toaster';
 
-const inter = Inter({ subsets: ['latin'] });
+// Use the bundled font so clean builds do not require Google Fonts access.
+const font = localFont({ src: './fonts/GeistVF.woff', weight: '100 900' });
 
 export const metadata = {
   title: 'PropManage - Maintenance App',
@@ -17,7 +18,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className + " bg-slate-50 text-slate-900"}>
+      <body className={font.className + " bg-slate-50 text-slate-900"}>
         <Navbar />
         <main className="min-h-screen px-4 py-8 md:px-8 max-w-7xl mx-auto">
           {children}

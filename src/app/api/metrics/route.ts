@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
         return errorResponse('Invalid role', 400);
 
-    } catch (error: any) {
+    } catch {
         return errorResponse('Failed to fetch metrics', 500);
     }
 }

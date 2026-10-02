@@ -1,16 +1,36 @@
-version: '3.8'
 services:
   db:
     image: postgres:15-alpine
     restart: always
     environment:
-      POSTGRES_USER: proptech
-      POSTGRES_PASSWORD: password123
-      POSTGRES_DB: proptech_db
+      POSTGRES_USER: ${POSTGRES_USER:-proptech}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-proptech_db}
     ports:
       - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  app:
+    profiles: ['app']
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/storage/uploads
+      - ./public/uploads:/app/public/uploads:ro
 
 volumes:
   pgdata:
+  uploads:

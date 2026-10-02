@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
         return successResponse(user, 201);
 
     } catch (error: unknown) {
+        if (error instanceof SyntaxError) return errorResponse('Invalid JSON body', 400);
         if (error instanceof z.ZodError) {
             return errorResponse('Invalid input format: ' + error.issues[0].message, 400);
         }

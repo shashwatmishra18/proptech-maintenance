@@ -1,5 +1,7 @@
 'use client';
 
+import type { TicketDetail } from '@/lib/types';
+
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -8,7 +10,7 @@ import Image from 'next/image';
 
 export default function TenantTicketDetail() {
     const params = useParams();
-    const [ticket, setTicket] = useState<any>(null);
+    const [ticket, setTicket] = useState<TicketDetail | null>(null);
 
     useEffect(() => {
         fetch(`/api/tickets/${params.id}`).then(r => r.json()).then(d => {
@@ -47,10 +49,9 @@ export default function TenantTicketDetail() {
                     <CardHeader><CardTitle>Attached Images</CardTitle></CardHeader>
                     <CardContent>
                         <div className="flex flex-wrap gap-4">
-                            {ticket.images.map((img: any) => (
+                            {ticket.images.map((img) => (
                                 <div key={img.id} className="relative w-48 h-48 rounded-md overflow-hidden border">
-                                    {/* Using standard img tag for local uploads demonstration without complex next/image hostname config */}
-                                    <img src={img.imageUrl} alt="Ticket attachment" className="object-cover w-full h-full" />
+                                    <Image src={img.imageUrl} alt="Ticket attachment" fill sizes="192px" className="object-cover" unoptimized />
                                 </div>
                             ))}
                         </div>
@@ -62,7 +63,7 @@ export default function TenantTicketDetail() {
                 <CardHeader><CardTitle>Activity Log</CardTitle></CardHeader>
                 <CardContent>
                     <div className="space-y-4">
-                        {ticket.activityLogs.map((log: any) => (
+                        {ticket.activityLogs.map((log) => (
                             <div key={log.id} className="border-l-2 border-slate-200 pl-4 py-1">
                                 <p className="text-sm font-medium text-slate-900">{log.action}</p>
                                 <p className="text-xs text-slate-500">

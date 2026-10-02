@@ -1,13 +1,13 @@
 import { prisma } from '../prisma';
 import { AppError } from '../errors/api-response';
 import { NotificationService } from './NotificationService';
-import { Priority, Status, Ticket } from '@prisma/client';
+import { Priority, Status, Prisma } from '@prisma/client';
 import { escapeHtml } from '../utils';
 import { attachmentUrl } from '../attachments';
 
 export const TicketService = {
     getAllForUser: async (user: { userId: string, role: string }, status?: Status) => {
-        let where: any = {};
+        const where: Prisma.TicketWhereInput = {};
         if (status) where.status = status;
 
         if (user.role === 'TENANT') {

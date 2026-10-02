@@ -22,6 +22,34 @@ function load(file, overrides = {}) {
     return module.exports;
 }
 
+test('Zod 4 handlers reject invalid and malformed JSON without database operations', async () => {
+    const session = { userId: crypto.randomUUID(), role: 'TENANT', exp: 9999999999 };
+    const overrides = {
+        '@/lib/roles': { requireAuth: async () => session, requireRole: async () => session },
+        '@/lib/prisma': { prisma: {} },
+        '@/lib/services/AuthService': { AuthService: {} },
+        '@/lib/services/TicketService': { TicketService: {} },
+        '@/lib/attachments': { validateOwnedUploads: async () => { throw new Error('Unexpected upload access'); } },
+    };
+    const cases = [
+        ['src/app/api/auth/login/route.ts', 'POST'],
+        ['src/app/api/auth/register/route.ts', 'POST'],
+        ['src/app/api/tickets/route.ts', 'POST'],
+        ['src/app/api/tickets/[id]/notes/route.ts', 'POST'],
+        ['src/app/api/tickets/[id]/status/route.ts', 'POST'],
+        ['src/app/api/tickets/[id]/status/route.ts', 'PATCH'],
+    ];
+    for (const [file, method] of cases) {
+        const handler = load(file, overrides)[method];
+        for (const body of ['{}', '{']) {
+            const req = new NextRequest('http://localhost/api/test', { method, body, headers: { 'Content-Type': 'application/json' } });
+            assert.equal((await handler(req, { params: { id: session.userId } })).status, 400, file + ' ' + body);
+        }
+    }
+    const tickets = load('src/app/api/tickets/route.ts', overrides);
+    assert.equal((await tickets.GET(new NextRequest('http://localhost/api/tickets?status=INVALID'))).status, 400);
+});
+
 test('Phase 1 registration, sessions, directory and attachment boundaries', async () => {
     const originalSecret = process.env.JWT_SECRET;
     const session = load('src/lib/session.ts');

@@ -1,12 +1,14 @@
 'use client';
 
+import type { NotificationSummary } from '@/lib/types';
+
 import { useEffect, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 
 export function NotificationBell() {
-    const [notifications, setNotifications] = useState<any[]>([]);
+    const [notifications, setNotifications] = useState<NotificationSummary[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [open, setOpen] = useState(false);
 

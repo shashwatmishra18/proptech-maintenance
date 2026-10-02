@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
         const user = await AuthService.login(data.email, data.password);
         return successResponse(user);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+        if (error instanceof SyntaxError) return errorResponse('Invalid JSON body', 400);
         if (error instanceof z.ZodError) {
             return errorResponse('Invalid input format', 400);
         }

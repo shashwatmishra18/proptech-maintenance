@@ -5,3 +5,7 @@
 node_modules
 .next
 storage
+coverage
+*.tsbuildinfo
+*.log
+scripts/security.test.cjs

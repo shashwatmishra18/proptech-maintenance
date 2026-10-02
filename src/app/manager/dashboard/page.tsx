@@ -1,12 +1,14 @@
 'use client';
 
+import type { TicketSummary } from '@/lib/types';
+
 import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 
 export default function ManagerDashboard() {
-    const [tickets, setTickets] = useState<any[]>([]);
+    const [tickets, setTickets] = useState<TicketSummary[]>([]);
     const [metrics, setMetrics] = useState({
         total: 0,
         open: 0,

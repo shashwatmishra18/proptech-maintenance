@@ -81,7 +81,9 @@ async function main() {
     console.log('Seeding complete!')
 }
 
-main()
+if (process.argv.includes('--check')) {
+    console.log('Seed module and configuration loaded successfully; no database operations executed.');
+} else main()
     .catch((e) => {
         console.error(e)
         process.exit(1)

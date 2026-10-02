@@ -1,6 +1,6 @@
+import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
 import { requireAuth, authorizeTicketAccess } from '@/lib/roles';
 import { errorResponse, successResponse } from '@/lib/errors/api-response';
 import { TicketService } from '@/lib/services/TicketService';
@@ -25,8 +25,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         const log = await TicketService.addNote(params.id, payload.userId, data.note);
 
         return successResponse(log, 201);
-    } catch (error: any) {
+    } catch (error: unknown) {
+        if (error instanceof SyntaxError) return errorResponse('Invalid JSON body', 400);
         if (error instanceof z.ZodError) return errorResponse('Invalid input', 400);
-        return errorResponse(error.message, 500);
+        return errorResponse('Internal Server Error', 500);
     }
 }

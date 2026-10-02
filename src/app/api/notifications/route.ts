@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
         });
 
         return successResponse({ notifications, unreadCount });
-    } catch (error: any) {
+    } catch {
         return errorResponse('Failed to fetch notifications', 500);
     }
 }
@@ -35,7 +35,7 @@ export async function PATCH(req: NextRequest) {
         });
 
         return successResponse({ message: 'Marked as read' });
-    } catch (error: any) {
+    } catch {
         return errorResponse('Failed to update notifications', 500);
     }
 }
