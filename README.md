@@ -4,7 +4,7 @@ A Next.js maintenance-ticket MVP for tenants, managers, and technicians. Tickets
 
 ## Requirements
 
-- Node.js 22 LTS and npm (Docker also uses Node 22).
+- Node.js 22 LTS and npm (Docker also uses Node 22). The patched runtime is Next.js 15.5.24 with React 18; cookies and route parameters use its async APIs.
 - PostgreSQL 15, either local or through Docker Compose.
 - Docker Desktop with its Linux engine running for container deployment.
 
@@ -27,6 +27,7 @@ npm ci
 | POSTGRES_USER | Docker database user (default proptech) |
 | POSTGRES_PASSWORD | Required Docker database password; choose your own |
 | POSTGRES_DB | Docker database name (default proptech_db) |
+| POSTGRES_PORT | Localhost-only database port on the host (default 5432) |
 | DOCKER_DATABASE_URL | App's connection URL inside Docker; use db as hostname and the same database credentials |
 
 DATABASE_URL and DOCKER_DATABASE_URL follow postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public. URL-encode special characters in credentials. Keep real values only in ignored environment files or your deployment secret store. Changing POSTGRES_* does not change users/passwords in an existing PostgreSQL volume.
@@ -85,7 +86,7 @@ npx prisma validate
 npx prisma generate
 npx tsc --noEmit --incremental false
 npm run lint
-node --test scripts/security.test.cjs
+npm test
 npm run prisma:seed:check
 npm run build
 ```
@@ -157,7 +158,7 @@ All three authorized ticket views expose notes until completion. Assignment, sta
 
 Notification dropdowns retain targeted reads and confirmed server counts, with loading, refresh/read errors, retry controls, and visible read labels. Notification records have no structured ticket ID, so items deliberately remain unlinked. Shared ticket cards, wrapping text, responsive detail columns, labelled form controls, a skip link, and native keyboard-accessible controls support desktop and mobile use.
 
-Run the UI regression suite with `node --test scripts/ui.test.cjs`, or run all suites with `node --test scripts/security.test.cjs scripts/reliability.test.cjs scripts/ui.test.cjs`. These lightweight tests cover request-state recovery, role redirects, dashboard states, note permissions/submission, and safe error messages without additional framework dependencies.
+Run the UI regression suite with `node --test scripts/ui.test.cjs`, or run all suites with `npm test`. These lightweight tests cover request-state recovery, role redirects, dashboard states, note permissions/submission, and safe error messages without additional framework dependencies.
 
 ## Workflow Logic & Architecture
 
@@ -168,57 +169,32 @@ Run the UI regression suite with `node --test scripts/ui.test.cjs`, or run all s
 
 These rules are strictly enforced in `lib/services/TicketService.ts`. Reverting to previous states or skipping states returns a `400 Bad Request`.
 
+## Release verification and operations
+
+Run `npm ci --no-audit --no-fund`, the checks above, `npm audit`, and `node scripts/standalone-smoke.cjs`. `npm test` runs security, reliability, UI, and release edge-case tests. No seed runs in these checks.
+
+For opt-in live tests, start a separate local Compose project named `proptech-maintenance-integration`, with `POSTGRES_PORT=55432`, using the configured development credentials. Set `RUN_LIVE_INTEGRATION=1` and `INTEGRATION_DATABASE_URL` to the private localhost:55432 URL for `proptech_db`, then run `node scripts/integration.cjs` after building. The script refuses remote hosts or other ports/databases, applies existing migrations, and creates unique local fixtures without resetting or deleting records. It uses HTTP port 3103 and stops its test server. Never point it at a forwarded production database.
+
+For container QA, build `proptech-release-candidate`, run it on localhost:3105 connected to the isolated Compose network, and mount a dedicated named volume at `/app/storage/uploads` plus the legacy directory read-only. Set `QA_CONTAINER_NAME` to a `proptech-phase5-*` container name and the same integration environment, then run `node scripts/container-smoke.cjs`. This checks native bcrypt/Prisma execution, protected uploads, legacy support, and persistence across a container restart. Test records and volumes are retained.
+
+The public `GET /api/health` returns 200 only with a valid JWT secret and reachable PostgreSQL, or generic 503 otherwise. It exposes no credentials or database details and is never cached. Docker uses it as a readiness check; migrations must still be deployed explicitly before app rollout.
+
+Production deployment requires a TLS reverse proxy, request-size and authentication rate limits at the edge, private database access, appropriate database privileges, protected runtime secrets, and tested backups of the database and both attachment stores. Apply migrations with an appropriately privileged connection before starting the image; application startup performs neither migration nor seed. The database port is bound only to localhost by default. Compose's application port should be exposed only through your intended proxy/firewall configuration.
+
+Do not bake legacy uploads into an image: they are excluded from the build context and must be mounted. All app instances using the same database must share the same private attachment storage. Keep the existing volume's UID/GID 1001 writable by the app. Missing environment variables or database connectivity leave readiness unhealthy, rather than reporting a working deployment.
+
+Registration accepts passwords up to 72 UTF-8 bytes to prevent bcrypt truncation. Existing password hashes and user records are not rewritten. Sessions are stateless JWTs with seven-day expiry; logout removes the browser cookie, while secret rotation invalidates all tokens. There is no individual token revocation or account-management workflow.
+
+Known operational limits: unlinked uploads after a process crash or lost response may require a controlled manual review; linked or legacy files must not be deleted. Search, pagination, staff invitations, password reset, organizations, notification history, and scheduling remain outside this release.
+
 ## ER Diagram
 
 ```mermaid
 erDiagram
-```sh
- User {
-     String id PK
-     String name
-     String email UK
-     String password
-     Role role
-     DateTime createdAt
- }
- Ticket {
-     String id PK
-     String title
-     String description
-     Status status
-     Priority priority
-     String tenantId FK
-     String assignedToId FK
-     DateTime createdAt
-     DateTime updatedAt
- }
- TicketImage {
-     String id PK
-     String ticketId FK
-     String imageUrl
- }
- ActivityLog {
-     String id PK
-     String ticketId FK
-     String userId FK
-     String action
-     DateTime createdAt
- }
- Notification {
-     String id PK
-     String userId FK
-     String message
-     Boolean read
-     DateTime createdAt
- }
-```
-
-```sh
- User ||--o{ Ticket : "TenantTickets"
- User ||--o{ Ticket : "AssignedTickets"
- Ticket ||--o{ TicketImage : "has"
- Ticket ||--o{ ActivityLog : "has logs"
- User ||--o{ ActivityLog : "creates"
- User ||--o{ Notification : "receives"
-```
+    User ||--o{ Ticket : reports
+    User ||--o{ Ticket : assigned
+    Ticket ||--o{ TicketImage : contains
+    Ticket ||--o{ ActivityLog : records
+    User ||--o{ ActivityLog : writes
+    User ||--o{ Notification : receives
 ```

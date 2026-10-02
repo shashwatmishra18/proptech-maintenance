@@ -5,6 +5,7 @@
 node_modules
 .next
 storage
+public/uploads
 coverage
 *.tsbuildinfo
 *.log
