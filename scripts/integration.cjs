@@ -13,6 +13,8 @@ url.hostname = '127.0.0.1';
 process.env.DATABASE_URL = url.toString();
 // Automated fixtures must never send real email, even if the shell has provider credentials.
 process.env.EMAIL_PROVIDER = '';
+// Production-mode fallback needs a trusted origin; never inherit a real site's origin.
+process.env.APP_ORIGIN = 'https://fixnest.example.test';
 const { PrismaClient } = req('@prisma/client');
 const db = new PrismaClient();
 const ts = req('typescript');
