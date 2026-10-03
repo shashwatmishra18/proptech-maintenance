@@ -34,7 +34,7 @@ jobs:
       - name: Ephemeral test signing key
         run: echo "JWT_SECRET=$(openssl rand -hex 48)" >> "$GITHUB_ENV"
       - run: npm ci --no-audit --no-fund
-      - run: npm audit
+      - run: npm run audit:security
       - run: npx prisma validate
       - run: npx prisma generate
       - run: npx tsc --noEmit --incremental false

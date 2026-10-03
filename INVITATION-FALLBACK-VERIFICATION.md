@@ -39,19 +39,11 @@ checkout; this branch starts at the deployed `914cc10` baseline.
   appear, including provider failure. UI tests exercise copy/hide/renew/revoke
   and the exact unconfigured-email warning.
 
-## Deployment blocker
+## Authorized dependency mitigation
 
-The unchanged mandatory `npm audit` gate reports seven high-severity findings
-from a single underlying advisory, GHSA-vfj7-8cjw-p6xm in `braces` 3.0.3.
-Upstream lists no patched release. Compatible current package versions were
-checked. The audit gate has not been changed, ignored, or bypassed.
-
-Automatic approval review rejected a proposed local recursion-depth guard plus
-an exception limited to that specifically guarded advisory, because it would
-monkey-patch dependencies and change the audit gate. No mitigation/exception
-files or CI changes were applied. Explicit user approval is needed before
-implementing that proposal; it would then require its own tests and CI review.
-
-Production deployment and live-production onboarding verification are pending.
-Production data, Manager credentials, Railway configuration and temporary SSH
-access have not been changed by this task.
+The user explicitly approved a guard and exception only for GHSA-vfj7-8cjw-p6xm.
+See BRACES-MITIGATION.md for scope and removal criteria. npm audit remains active;
+all unrelated findings block release. 87 automated tests pass (the existing 84
+plus three guard tests). The real local PostgreSQL suite, build, standalone,
+operator, schema and lint checks pass. Docker and hosted deployment verification
+are in progress. No production data or Manager credentials changed during these checks.

@@ -254,7 +254,7 @@ Run `npm test` or `node --test scripts/notifications.test.cjs`. The guarded loca
 
 ## Release verification and operations
 
-Run `npm ci --no-audit --no-fund`, the checks above, `npm audit`, and `node scripts/standalone-smoke.cjs`. `npm test` runs security, reliability, UI, and release edge-case tests. No seed runs in these checks.
+Run `npm ci --no-audit --no-fund`, the checks above, `npm run audit:security` (see `BRACES-MITIGATION.md` for the single guarded advisory exception), and `node scripts/standalone-smoke.cjs`. `npm test` runs security, reliability, UI, and release edge-case tests. No seed runs in these checks.
 
 For opt-in live tests, start a separate local Compose project named `proptech-maintenance-integration`, with `POSTGRES_PORT=55432`, using the configured development credentials. Set `RUN_LIVE_INTEGRATION=1` and `INTEGRATION_DATABASE_URL` to the private localhost:55432 URL for `proptech_db`, then run `node scripts/integration.cjs` after building. The script refuses remote hosts or other ports/databases, applies existing migrations, and creates unique local fixtures without resetting or deleting records. It uses HTTP port 3103 and stops its test server. Never point it at a forwarded production database.
 
