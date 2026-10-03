@@ -3,6 +3,7 @@ import { AppError } from '../errors/api-response';
 import { lockStaff } from '../staff-lock';
 import { passwordConfirmation, passwordPolicy } from '../password-policy';
 import { deliverCredential } from '../credential-delivery';
+import { deliverManagerInvitation } from '../invitation-delivery';
 import { randomBytes, createHash } from 'node:crypto';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
@@ -37,7 +38,7 @@ export const AccountService = {
                 await db.accountEvent.create({ data: { userId: user.id, actorId: managerId, action: 'STAFF_INVITED' } });
                 return invitation;
             });
-            const delivery = await deliverCredential({ purpose: 'INVITE', email: input.email, token });
+            const delivery = await deliverManagerInvitation(input.email, token);
             return { ...invitation, ...delivery };
         } catch (error) {
             if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') throw new AppError('An account or invitation already uses this email.', 409);
@@ -66,7 +67,7 @@ export const AccountService = {
             await db.accountEvent.create({ data: { userId: user.id, actorId: managerId, action: 'INVITE_REISSUED' } });
             return { ...invitation, email: user.email };
         });
-        return { id: result.id, expiresAt: result.expiresAt, ...await deliverCredential({ purpose: 'INVITE', email: result.email, token }) };
+        return { id: result.id, expiresAt: result.expiresAt, ...await deliverManagerInvitation(result.email, token) };
     },
     context: async (token: string, purpose: 'INVITE' | 'RESET') => {
         const record = await prisma.credentialToken.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: true } });

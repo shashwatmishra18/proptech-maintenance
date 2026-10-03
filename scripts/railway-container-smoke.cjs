@@ -84,21 +84,18 @@ async function main() {
   const unit = (await api(`/api/properties/${property.id}/units`, manager, 'POST', { identifier: '1A' }, 201)).data;
   await api('/api/tenant-assignment', manager, 'PATCH', { email: email('tenant'), unitId: unit.id, expectedVersion: 0 });
   const invitation = (await api('/api/staff', manager, 'POST', { name: 'Railway QA Technician', email: email('tech') }, 201)).data;
-  assert.equal(invitation.delivered, false); assert.equal('url' in invitation, false); assert.equal('token' in invitation, false);
+  assert.equal(invitation.delivered, false); assert.equal(new URL(invitation.url).pathname, '/accept-invitation'); assert.equal('token' in invitation, false);
   const technician = await db.user.findUniqueOrThrow({ where: { email: email('tech') } });
-  // With provider deliberately disabled, a known LOCAL-only hash fixture exercises
-  // the real invitation endpoint without email/token leakage or production access.
-  const raw = crypto.randomBytes(32).toString('hex');
-  await db.credentialToken.create({ data: { tokenHash: crypto.createHash('sha256').update(raw).digest('hex'), purpose: 'INVITE',
-    email: technician.email, role: technician.role, authVersion: technician.authVersion, userId: technician.id,
-    createdById: original.id, expiresAt: new Date(Date.now() + 600000) } });
+  // Use the manager-only fallback; no direct token/database edit is needed.
+  const raw = new URLSearchParams(new URL(invitation.url).hash.slice(1)).get('token');
+  assert.match(raw, /^[a-f0-9]{64}$/);
   await api('/api/auth/invitation', '', 'POST', { token: raw, password, confirmation: password });
   await api('/api/auth/invitation', '', 'POST', { token: raw, password, confirmation: password }, 400);
   const tech = await login('tech');
   const recovery = (await api('/api/auth/forgot-password', '', 'POST', { email: email('tenant') })).data;
   assert.equal('url' in recovery, false); assert.equal('token' in recovery, false);
   assert.equal(docker(['exec', name, 'sh', '-c', 'test ! -f /app/.env && test ! -d /app/storage/dev-credentials && echo clean']), 'clean');
-  console.log('PASS Railway: explicit manager bootstrap/no overwrite, tenant sessions, property/unit occupancy, real invitation acceptance and disabled-email non-disclosure');
+  console.log('PASS Railway: explicit manager bootstrap/no overwrite, tenant sessions, property/unit occupancy, real invitation fallback/acceptance and public-reset non-disclosure');
 
   const form = new FormData(); form.append('file', new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=', 'base64')], { type: 'image/png' }), 'qa.png');
   const imageUrls = (await api('/api/upload', tenant, 'POST', form)).data.imageUrls;

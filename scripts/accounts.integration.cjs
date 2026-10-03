@@ -1,7 +1,7 @@
 module.exports = async function verify({ db, api, base, load, manager, manager2, tenantCookie, otherCookie, managerCookie, manager2Cookie, techCookie, property, unit, password }) {
     const assert = require('node:assert/strict'); const crypto = require('node:crypto'); const bcrypt = require('bcrypt');
     const prefix = 'phase8.' + Date.now(), events = [];
-    const service = load('src/lib/services/AccountService.ts', { '../prisma': { prisma: db }, '../credential-delivery': { deliverCredential: async event => { events.push(event); return { delivered: false }; } } }).AccountService;
+    const service = load('src/lib/services/AccountService.ts', { '../prisma': { prisma: db }, '../credential-delivery': { deliverCredential: async event => { events.push(event); return { delivered: false }; } }, '../invitation-delivery': { deliverManagerInvitation: async (email, token) => { events.push({ purpose: 'INVITE', email, token }); return { delivered: false }; } } }).AccountService;
     const complete = (token, pass = password) => ({ token, password: pass, confirmation: pass });
     const findToken = async token => db.credentialToken.findUniqueOrThrow({ where: { tokenHash: crypto.createHash('sha256').update(token).digest('hex') } });
     const latest = purpose => events.filter(event => event.purpose === purpose).at(-1).token;
@@ -9,7 +9,38 @@ module.exports = async function verify({ db, api, base, load, manager, manager2,
     async function login(email, pass = password, expected = 200) { const result = await api('/api/auth/login', '', 'POST', { email, password: pass }, expected); return result.res.headers.get('set-cookie')?.split(';')[0]; }
     for (const cookie of [tenantCookie, techCookie]) { await api('/api/staff', cookie, 'GET', undefined, 403); await api('/api/staff', cookie, 'POST', { name: 'Forbidden', email: prefix + '.forbidden@example.test' }, 403); }
     const production = (await api('/api/staff', managerCookie, 'POST', { name: 'Production token check', email: prefix + '.production@example.test' }, 201)).body;
-    assert.equal('url' in production, false); assert.equal('token' in production, false); assert.equal(production.delivered, false);
+    assert.equal('token' in production, false); assert.equal(production.delivered, false);
+    const fallbackToken = new URLSearchParams(new URL(production.url).hash.slice(1)).get('token');
+    assert.match(fallbackToken, /^[a-f0-9]{64}$/);
+    assert.equal(new URL(production.url).pathname, '/accept-invitation');
+    const fallbackRecord = await findToken(fallbackToken);
+    assert.equal(fallbackRecord.role, 'TECHNICIAN'); assert.equal(fallbackRecord.createdById, manager.id);
+    assert.ok(!JSON.stringify(fallbackRecord).includes(fallbackToken));
+    for (const forbidden of ['', tenantCookie, techCookie]) {
+        await api('/api/staff', forbidden, 'POST', { name: 'Forbidden fallback', email: prefix + '.blocked@example.test' }, forbidden ? 403 : 401);
+        await api('/api/staff/invitations/' + production.id, forbidden, 'POST', undefined, forbidden ? 403 : 401);
+    }
+    await api('/api/staff/invitations/' + production.id, manager2Cookie, 'POST', undefined, 404);
+    for (const ownerCookie of [managerCookie, manager2Cookie]) {
+        const listing = JSON.stringify((await api('/api/staff', ownerCookie)).body);
+        assert.ok(!listing.includes(fallbackToken)); assert.ok(!listing.includes('tokenHash')); assert.ok(!listing.includes('token='));
+    }
+    const fallbackRenewal = (await api('/api/staff/invitations/' + production.id, managerCookie, 'POST')).body;
+    const replacement = new URLSearchParams(new URL(fallbackRenewal.url).hash.slice(1)).get('token');
+    assert.notEqual(replacement, fallbackToken);
+    await api('/api/auth/invitation', '', 'POST', complete(fallbackToken), 400);
+    await api('/api/staff/invitations/' + fallbackRenewal.id, managerCookie, 'DELETE');
+    await api('/api/auth/invitation', '', 'POST', complete(replacement), 400);
+    const fallbackAgain = (await api('/api/staff/invitations/' + fallbackRenewal.id, managerCookie, 'POST')).body;
+    const finalToken = new URLSearchParams(new URL(fallbackAgain.url).hash.slice(1)).get('token');
+    const invitedContext = (await api('/api/auth/invitation', '', 'PUT', { token: finalToken })).body;
+    assert.equal(invitedContext.email, prefix + '.production@example.test');
+    await api('/api/auth/invitation', '', 'POST', complete(finalToken));
+    await api('/api/auth/invitation', '', 'POST', complete(finalToken), 400);
+    const activatedCookie = await login(invitedContext.email);
+    assert.equal((await api('/api/account', activatedCookie)).body.role, 'TECHNICIAN');
+    assert.equal(await db.user.count({ where: { email: invitedContext.email } }), 1);
+    console.log('PASS: production-mode manager-only fallback, renewal/revocation, real activation/login, single use and no duplicate technician');
     const invited = await invite('technician'), record = await findToken(invited.token);
     assert.ok(!JSON.stringify(record).includes(invited.token)); assert.equal(record.email, invited.email); assert.equal(record.role, 'TECHNICIAN'); assert.equal(record.purpose, 'INVITE'); assert.equal(record.createdById, manager.id);
     await login(invited.email, password, 400);
@@ -34,7 +65,7 @@ module.exports = async function verify({ db, api, base, load, manager, manager2,
     const duplicates = await Promise.allSettled([1, 2].map(() => service.invite(manager.id, { name: 'Duplicate race', email: prefix + '.duplicate@example.test' }))); assert.equal(duplicates.filter(r => r.status === 'fulfilled').length, 1); assert.equal(duplicates.filter(r => r.status === 'rejected' && r.reason.statusCode === 409).length, 1);
     const racing = await invite('accept-race'); const accepts = await Promise.allSettled([1, 2].map(() => service.complete(complete(racing.token), 'INVITE'))); assert.equal(accepts.filter(r => r.status === 'fulfilled').length, 1); assert.equal(accepts.filter(r => r.status === 'rejected' && r.reason.statusCode === 400).length, 1);
     console.log('PASS Phase 8: role-bound hashed invitations, expiry/revocation/renewal, duplicate and consumption races, staff ownership and profile escalation guards');
-    const failedDelivery = load('src/lib/services/AccountService.ts', { '../prisma': { prisma: db }, '../credential-delivery': { deliverCredential: async () => ({ delivered: false, delivery: 'failed' }) } }).AccountService;
+    const failedDelivery = load('src/lib/services/AccountService.ts', { '../prisma': { prisma: db }, '../credential-delivery': { deliverCredential: async () => ({ delivered: false, delivery: 'failed' }) }, '../invitation-delivery': { deliverManagerInvitation: async () => ({ delivered: false, delivery: 'failed' }) } }).AccountService;
     const failedInvite = await failedDelivery.invite(manager.id, { name: 'Delivery failure fixture', email: prefix + '.delivery-failed@example.test' });
     assert.equal(failedInvite.delivery, 'failed'); assert.equal('url' in failedInvite, false);
     const failedRecord = await db.credentialToken.findUniqueOrThrow({ where: { id: failedInvite.id } }); assert.equal(failedRecord.usedAt, null); assert.equal(failedRecord.revokedAt, null);

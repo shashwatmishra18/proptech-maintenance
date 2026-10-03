@@ -43,12 +43,12 @@ async function main() {
     const managerLogin = await api('/api/auth/login', '', 'POST', { email: 'manager.' + email, password });
     const managerCookie = managerLogin.response.headers.get('set-cookie').split(';')[0];
     const invitation = (await api('/api/staff', managerCookie, 'POST', { name: 'Container invited technician', email: 'staff.' + email }, 201)).data;
-    assert.equal(invitation.delivered, false); assert.equal('url' in invitation, false); assert.equal('token' in invitation, false);
+    assert.equal(invitation.delivered, false); assert.equal(new URL(invitation.url).pathname, '/accept-invitation'); assert.match(new URL(invitation.url).hash, /^#token=[a-f0-9]{64}$/); assert.equal('token' in invitation, false);
     const knownRecovery = (await api('/api/auth/forgot-password', '', 'POST', { email })).data;
     const unknownRecovery = (await api('/api/auth/forgot-password', '', 'POST', { email: 'unknown.' + email })).data;
     assert.deepEqual(knownRecovery, unknownRecovery); assert.equal('url' in knownRecovery, false);
     assert.equal(docker(['exec', name, 'sh', '-c', 'test ! -d /app/storage/dev-credentials && test ! -f /app/.env && echo clean']), 'clean');
-    console.log('PASS: production invitation/reset responses expose no bearer links or secrets, even with development delivery enabled');
+    console.log('PASS: manager invitation fallback is available; public reset responses and production storage expose no tokens');
     const form = new FormData(); form.append('file', new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=','base64')], { type: 'image/png' }), 'qa.png');
     const uploads = (await api('/api/upload', cookie, 'POST', form)).data.imageUrls;
     const ticket = (await api('/api/tickets', cookie, 'POST', { title: 'Container storage verification', description: 'Verify protected persistent storage in the production image.', priority: 'HIGH', imageUrls: uploads }, 201)).data;
